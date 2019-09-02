@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 import time
 
-from weather import AAGCloudSensor
+from aag.weather import AAGCloudSensor
 
 
 def main(config_file=None, store_result=False, verbose=False, **kwargs):

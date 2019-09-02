@@ -666,6 +666,10 @@ class AAGCloudSensor(object):
         Args:
             data (dict): Data read `self.capture`.
         """
+
+        # Fix 'errors' columns
+        data['errors'] = ' '.join([f'{k}={v}' for k, v in data['errors'].items()])
+
         # Build place-holders for columns
         column_names = ','.join(list(data.keys()))
         column_values = list(data.values())
@@ -677,7 +681,7 @@ class AAGCloudSensor(object):
         # Perform insert
         try:
             self.db_cursor.execute(insert_sql, column_values)
-            self.db_cursor.commit()
+            self.db_conn.commit()
         except Exception as e:
             logger.warning(f'Error on insert: {e!r}')
 

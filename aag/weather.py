@@ -1,5 +1,4 @@
-#!/usr/bin/env python3
-
+import sqlite3
 import numpy as np
 import re
 import serial
@@ -95,7 +94,11 @@ class AAGCloudSensor(object):
 
     """
 
-    def __init__(self, config_file, serial_address=None, store_result=True):
+    def __init__(self,
+                 config_file,
+                 db_file='weather.db',
+                 db_table='weather',
+                 serial_address=None):
 
         try:
             with open(config_file, 'r') as f:
@@ -108,6 +111,14 @@ class AAGCloudSensor(object):
             self.cfg = self.config['weather']['aag_cloud']
         except KeyError:
             logger.error(f'Invalid configuration file.')
+
+        # Setup the DB file
+        self.db_conn = sqlite3.connect(db_file)
+        self.db_cursor = self.db_conn.cursor()
+        self._db_table = db_table
+
+        # Check if 'weather' table exists
+        self._check_db_table()
 
         self.safety_delay = self.cfg.get('safety_delay', 15.)
 
@@ -587,8 +598,15 @@ class AAGCloudSensor(object):
             self.wind_speed = None
         return self.wind_speed
 
-    def capture(self, store_result=False, **kwargs):
-        """ Query the CloudWatcher """
+    def capture(self, store_result=True, **kwargs):
+        """Query the CloudWatcher
+
+        Args:
+            store_result (bool, optional): If True, save data to sqlite db.
+
+        Returns:
+            dict: Captured data.
+        """
 
         self.logger.debug("Updating weather")
 
@@ -636,10 +654,32 @@ class AAGCloudSensor(object):
 
         self.calculate_and_set_PWM()
 
+        # Store result
         if store_result:
-            self.db.insert_current('weather', data)
+            self.store_result(data)
 
         return data
+
+    def store_result(self, data):
+        """Insert data into database.
+
+        Args:
+            data (dict): Data read `self.capture`.
+        """
+        # Build place-holders for columns
+        column_names = ','.join(list(data.keys()))
+        column_values = list(data.values())
+        column_holders = ','.join(['?' for _ in column_values])
+
+        # Build sql for insert
+        insert_sql = f'INSERT INTO {self._db_table} ({column_names}) VALUES ({column_holders})'
+
+        # Perform insert
+        try:
+            self.db_cursor.execute(insert_sql, column_values)
+            self.db_cursor.commit()
+        except Exception as e:
+            self.logger.warning(f'Error on insert: {e!r}')
 
     def AAG_heater_algorithm(self, target, last_entry):
         """
@@ -938,3 +978,41 @@ class AAGCloudSensor(object):
             self.logger.debug('  Rain Condition: {}'.format(rain_condition))
 
         return rain_condition, rain_safe
+
+    def _check_db_table(self):
+        """Check if db table exists and if not create it.
+
+        Args:
+            db_table (str): Name of db_table.
+        """
+        table_check_sql = f"""
+            SELECT name
+            FROM sqlite_master
+            WHERE type='table' AND name='{self._db_table}';
+        """
+        self.db_cursor.execute(table_check_sql)
+        if self.db_cursor.fetchone() is None:
+            # Create table
+            self.db_cursor.execute('''
+                CREATE TABLE weather (
+                        date DATETIME,
+                        weather_sensor_name TEXT,
+                        weather_sensor_firmware_version FLOAT,
+                        weather_sensor_serial_number BIGINT,
+                        "sky_temp_C" FLOAT,
+                        "ambient_temp_C" FLOAT,
+                        "internal_voltage_V" FLOAT,
+                        "ldr_resistance_Ohm" FLOAT,
+                        "rain_sensor_temp_C" FLOAT,
+                        rain_frequency FLOAT,
+                        pwm_value FLOAT,
+                        errors TEXT,
+                        "wind_speed_KPH" FLOAT,
+                        safe BOOLEAN,
+                        sky_condition TEXT,
+                        wind_condition TEXT,
+                        gust_condition TEXT,
+                        rain_condition TEXT,
+                        CHECK (safe IN (0, 1))
+                );
+            ''')

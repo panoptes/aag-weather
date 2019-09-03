@@ -72,6 +72,17 @@ FLASK_DEBUG=1
 DB_NAME=/home/pi/aag-weather/weather.db
 ```
 
+If you would like to make the server available at your public IP address, add the host to
+the `.env` file, e.g.:
+
+> :warning: :dragon: :warning: Use at your own risk.
+
+```
+FLASK_RUN_HOST=0.0.0.0
+FLASK_RUN_PORT=8989
+```
+
+
 #### Running Flask Server
 
 The Flask server uses the Flask command line interface. To start, run the following from the root of

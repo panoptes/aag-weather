@@ -35,7 +35,8 @@ if __name__ == '__main__':
     parser.add_argument('--read-delay', default=60, help='Number of seconds between reads.')
     parser.add_argument('--serial-address', default=None,
                         help='USB serial address to use. If None, value from config will be used.')
-    parser.add_argument('--verbose', action='store_true', default=False, help='Verbose.')
+    parser.add_argument('--verbose', action='store_true', default=False,
+                        help='Output data on the command line.')
 
     args = parser.parse_args()
 

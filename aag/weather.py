@@ -684,6 +684,7 @@ class AAGCloudSensor(object):
             self.db_conn.commit()
         except Exception as e:
             logger.warning(f'Error on insert: {e!r}')
+            logger.warning(f'Attempted SQL: {insert_sql}')
 
     def AAG_heater_algorithm(self, target, last_entry):
         """

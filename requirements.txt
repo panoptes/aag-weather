@@ -3,6 +3,7 @@ Flask
 numpy
 pandas
 pyserial
+python-dateutil
 python-dotenv
 pyyaml > 5.0.0
 sqlalchemy

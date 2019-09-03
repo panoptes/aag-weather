@@ -4,7 +4,7 @@ import time
 from aag.weather import AAGCloudSensor
 
 
-def main(config_file=None, store_result=False, verbose=False, **kwargs):
+def main(config_file=None, store_result=False, read_delay=60, verbose=False, **kwargs):
     if config_file is None:
         print('Must pass config_file')
         return
@@ -17,7 +17,7 @@ def main(config_file=None, store_result=False, verbose=False, **kwargs):
             if verbose:
                 print(f'{data!r}')
 
-            time.sleep(60)
+            time.sleep(read_delay)
         except KeyboardInterrupt:
             break
 
@@ -32,6 +32,7 @@ if __name__ == '__main__':
                         help='If data entries should be saved to db, default False.')
     parser.add_argument('--db-file', default='weather.db', help='Name of sqlite3 db file to use.')
     parser.add_argument('--db-table', default='weather', help='Name of db table to use.')
+    parser.add_argument('--read-delay', default=60, help='Number of seconds between reads.')
     parser.add_argument('--serial-address', default=None,
                         help='USB serial address to use. If None, value from config will be used.')
     parser.add_argument('--verbose', action='store_true', default=False, help='Verbose.')

@@ -35,3 +35,9 @@ weather:
     pwm_limits:
       - -5
       - 105
+location:
+  name: Maunaloa Observatory
+  elevation: 3400.0  # meters
+  latitude: 19.54  # degrees
+  longitude: -155.58  # degrees
+  timezone: US/Hawaii

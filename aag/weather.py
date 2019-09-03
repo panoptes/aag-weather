@@ -100,13 +100,13 @@ class AAGCloudSensor(object):
                  db_table='weather',
                  serial_address=None):
 
+        # Read configuration
         try:
             with open(config_file, 'r') as f:
                 self.config = full_load(f.read())
         except Exception as e:
             raise e
 
-        # Read configuration
         try:
             self.cfg = self.config['weather']['aag_cloud']
         except KeyError:

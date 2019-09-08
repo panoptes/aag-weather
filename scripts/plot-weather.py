@@ -14,6 +14,7 @@ from dateutil.parser import parse as date_parser
 
 import numpy as np
 import pandas as pd
+from pandas.io.json import json_normalize
 from pandas.plotting import register_matplotlib_converters
 
 from matplotlib import pyplot as plt
@@ -27,7 +28,8 @@ from astropy.time import Time
 from astroplan import Observer
 from astropy.coordinates import EarthLocation
 
-logger = logging.getLogger(__name__)
+logging.basicConfig()
+logger = logging.getLogger('aag-weather-plotter')
 
 register_matplotlib_converters()
 plt.ioff()
@@ -42,12 +44,7 @@ class WeatherPlotter(object):
 
     """ Plot weather information for a given time span """
 
-    def __init__(self,
-                 config_file=None,
-                 date_string=None,
-                 db_file='weather.db',
-                 db_table='weather',
-                 *args, **kwargs):
+    def __init__(self, data, config_file=None, date_string=None, *args, **kwargs):
         super(WeatherPlotter, self).__init__()
         self.args = args
         self.kwargs = kwargs
@@ -66,11 +63,6 @@ class WeatherPlotter(object):
 
         self.thresholds = self.config['weather'].get('aag_cloud', None)
 
-        # Set up db
-        self._db_file = db_file
-        self._db_table = db_table
-        self._db_engine = create_engine(f'sqlite:///{self._db_file}', echo=False)
-
         if not date_string:
             self.today = True
             self.date = dt.utcnow()
@@ -88,11 +80,17 @@ class WeatherPlotter(object):
             self.end = dt(self.date.year, self.date.month, self.date.day, 23, 59, 59, 0)
         logger.info(f'Creating weather plotter for {self.date_string}')
 
-        self.table = self.get_table()
-        logger.debug(f'Found {len(self.table)} weather entries.')
-
+        # Get objects for plotting location specifics.
         self.observer = self.get_location()
         self.twilights = self.get_twilights()
+
+        # Set up table data.
+        self.table = data
+        logger.debug(f'Found {len(self.table)} total weather entries.')
+
+        # Filter by date
+        logger.debug(f'Filtering table rows for {self.date_string}')
+        self.table = self.table.loc[self.start.isoformat():self.end.isoformat()]
 
         self.time = self.table.index
         self.date_format = '%Y-%m-%d %H:%m:%S'
@@ -100,7 +98,7 @@ class WeatherPlotter(object):
         last = f'{self.time[-1]:{self.date_format}}'
         logger.debug(f'Retrieved {len(self.table)} entries between {first} and {last}')
 
-    def make_plot(self, output_file=None):
+    def make_plot(self, save_plot=True, output_file=None):
         # -------------------------------------------------------------------------
         # Plot a day's weather
         # -------------------------------------------------------------------------
@@ -133,22 +131,13 @@ class WeatherPlotter(object):
         self.plot_rain_freq_vs_time()
         self.plot_safety_vs_time()
         self.plot_pwm_vs_time()
-        self.save_plot(plot_filename=output_file)
-        # Close all figures to free memory.
-        plt.close('all')
 
-    def get_table(self):
-        table = pd.read_sql_table('weather', self._db_engine).set_index('date').sort_index()
-
-        # Filter by date
-        logger.debug(f'Filtering table rows for {self.date_string}')
-        table = table.loc[self.start.isoformat():self.end.isoformat()]
-
-        if table is None:
-            warnings.warn("No data")
-            sys.exit(0)
-
-        return table
+        if save_plot:
+            self.save_plot(plot_filename=output_file)
+            # Close all figures to free memory.
+            plt.close('all')
+        else:
+            return self.fig
 
     def get_location(self):
         location_cfg = self.config.get('location', None)
@@ -624,7 +613,7 @@ class WeatherPlotter(object):
         rst_axes.set_xlim(self.start, self.end)
 
         pwm_value = self.table['pwm_value']
-        rst_delta = self.table['rain_sensor_temp_C'] - self.table['ambient_temp_C']
+        rst_delta = self.table['rain_sensor_temp_C'].astype('float') - self.table['ambient_temp_C']
 
         rst_axes.plot_date(self.time, rst_delta, 'ro-', alpha=0.5,
                            label='RST Delta (C)',
@@ -713,25 +702,60 @@ def moving_averagexy(x, y, window_size):
     return xma, yma
 
 
+def load_sqlite_db(db_file):
+    # Set up db
+    db_engine = create_engine(f'sqlite:///{db_file}', echo=False)
+
+    table = pd.read_sql_table('weather', db_engine).set_index('date').sort_index()
+
+    if table is None:
+        warnings.warn("No data")
+        sys.exit(0)
+
+    return table
+
+
+def load_json_file(json_file):
+    # Read the json, then normalize the unflattened "data" column, returning a
+    # normalized dataframe
+    df0 = json_normalize(pd.read_json(json_file,
+                                      lines=True,
+                                      orient='values')['data'].values).set_index('date')
+    df0.index = pd.to_datetime(df0.index)
+
+    return df0
+
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser(
         description="Make a plot of the weather for a give date.")
-    parser.add_argument('--config-file', required=True,
+    parser.add_argument('-c', '--config-file', required=True,
                         help='Config file that contains the AAG params.')
+    # Data args for building dataframe:
+    #   Either get name of sqlite db and table
+    #   Or get json file
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--db-file',
+                       help='Name of sqlite3 db file to use, must contain a "weather" table')
+    group.add_argument('--json-file', help='Name of json file to use')
     parser.add_argument("-d", "--date", type=str, dest="date",
                         default=None, help="UT Date to plot")
-    parser.add_argument("-f", "--file", type=str, dest="data_file",
-                        default=None, help="Filename for data file")
-    parser.add_argument("-o", "--plot_file", type=str, dest="plot_file",
+    parser.add_argument("-o", "--plot-file", type=str, dest="plot_file",
                         default='today.png', help="Filename for generated plot")
-    parser.add_argument('--db-file', default='weather.db',
-                        help='Name of sqlite3 db file to use, default "weather.db"')
-    parser.add_argument('--db-table', default='weather',
-                        help='Name of db table to use, default "weather"')
     parser.add_argument('--verbose', action='store_true', default=False,
                         help='Output data on the command line.')
     args = parser.parse_args()
 
-    wp = WeatherPlotter(**vars(args))
-    wp.make_plot(args.plot_file)
+    if args.verbose:
+        logger.setLevel(logging.DEBUG)
+
+    if args.db_file:
+        logger.debug('Loading data from DB file')
+        df0 = load_sqlite_db(args.db_file)
+    else:
+        logger.debug('Loading data from json file')
+        df0 = load_json_file(args.json_file)
+
+    wp = WeatherPlotter(df0, config_file=args.config_file, date_string=args.date)
+    wp.make_plot(output_file=args.plot_file)

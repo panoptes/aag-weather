@@ -1,6 +1,7 @@
 astroplan
 astropy
 Flask
+matplotlib
 numpy
 pandas
 pyserial

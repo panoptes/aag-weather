@@ -7,7 +7,6 @@ import time
 import logging
 
 from datetime import datetime as dt
-from yaml import full_load
 
 import astropy.units as u
 
@@ -95,22 +94,13 @@ class AAGCloudSensor(object):
     """
 
     def __init__(self,
-                 config_file,
+                 config,
                  db_file='weather.db',
                  db_table='weather',
-                 serial_address=None):
+                 serial_address=None,
+                 *args, **kwargs):
 
-        # Read configuration
-        try:
-            with open(config_file, 'r') as f:
-                self.config = full_load(f.read())
-        except Exception as e:
-            raise e
-
-        try:
-            self.cfg = self.config['weather']['aag_cloud']
-        except KeyError:
-            logger.error(f'Invalid configuration file.')
+        self.cfg = config
 
         # Setup the DB file
         self.db_conn = sqlite3.connect(db_file)

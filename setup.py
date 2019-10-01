@@ -42,7 +42,7 @@ modules = {
 }
 
 
-setup(name=NAME,
+setup(name=PACKAGENAME,
       version=__version__,
       description=DESCRIPTION,
       long_description=LONG_DESCRIPTION,

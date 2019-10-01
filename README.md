@@ -5,7 +5,14 @@ A small script that is capable of reading the [Lunatico AAG Cloud Watcher](https
 
 ## Install
 
-Clone the repository and then run:
+Clone the repository and then run either:
+
+
+```bash
+python setup.py install
+```
+
+or
 
 ```bash
 pip install -r requirements.txt

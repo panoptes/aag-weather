@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import sys
 import time
 from yaml import full_load
 
@@ -18,6 +19,10 @@ def main(config_file=None, store_result=False, read_delay=60, verbose=False, **k
         raise Exception(f'Invalid configuration file: {e!r}')
 
     aag = AAGCloudSensor(config, **kwargs)
+
+    if aag.AAG is None:
+        print(f'No AAG found, check log for details')
+        sys.exit(1)
 
     while True:
         try:

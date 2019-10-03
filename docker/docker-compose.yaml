@@ -1,0 +1,16 @@
+version: '3.7'
+services:
+  aag-weather-reader:
+    image: gcr.io/panoptes-survey/aag-weather:latest
+    init: true
+    container_name: aag-weather-reader
+    privileged: true
+    network_mode: host
+    command: ["python", "/app/scripts/read-aag.py", "--config-file", "/app/config.yaml"]
+  aag-weather-server:
+    image: gcr.io/panoptes-survey/aag-weather:latest
+    init: true
+    container_name: aag-weather-server
+    privileged: true
+    network_mode: host
+    command: ["python", "/app/scripts/serve-aag.py"]

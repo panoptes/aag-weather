@@ -1,6 +1,5 @@
 steps:
 # Build
-# AMD Build
 - name: 'gcr.io/cloud-builders/docker'
   id: 'amd64-base'
   args:

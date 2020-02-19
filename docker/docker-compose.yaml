@@ -6,11 +6,22 @@ services:
     container_name: aag-weather-reader
     privileged: true
     network_mode: host
-    command: ["python", "/app/scripts/read-aag.py", "--config-file", "/app/config.yaml"]
+    restart: on-failure
+    command:
+      - "python"
+      - "/app/scripts/read-aag.py"
+      - "--config-file"
+      - "/app/config.yaml"
+      - "--db-file"
+      - "/app/weather.db"
+      - "--store-result"
   aag-weather-server:
     image: gcr.io/panoptes-exp/aag-weather:latest
     init: true
     container_name: aag-weather-server
     privileged: true
     network_mode: host
-    command: ["python", "/app/scripts/serve-aag.py"]
+    restart: on-failure
+    command:
+      - "flask"
+      - "run"

@@ -9,24 +9,19 @@ WORKDIR /install
 
 COPY requirements.txt /requirements.txt
 
-RUN  apt-get update && \
+RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        pkg-config gcc build-essential libfreetype6-dev && \
-    pip install --install-option="--prefix=/install" -r /requirements.txt && \
+        pkg-config git gcc build-essential libfreetype6-dev && \
+    pip install --no-cache-dir -r /requirements.txt && \
     # Cleanup apt.
-    apt-get autoremove --purge -y gcc build-essential libfreetype6-dev pkg-config && \
+    apt-get autoremove --purge -y gcc build-essential pkg-config git && \
     apt-get autoremove --purge -y && \
     apt-get -y clean && \
     rm -rf /var/lib/apt/lists/*
 
-FROM base
-
-ENV PYTHONPATH=/install:${PYTHONPATH}
-
-COPY --from=builder /install /usr/local
 COPY . /app
 RUN cd /app && \
-    pip install --install-option="--prefix=/install" .
+    pip install --no-cache-dir .
 
 WORKDIR /app
 

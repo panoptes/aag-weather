@@ -1,5 +1,5 @@
 FROM python:3.7-slim as base
-LABEL MAINTAINER Developers for PANOPTES project<https://github.com/panoptes/POCS>
+LABEL MAINTAINER Developers for PANOPTES project<https://projectpanoptes.org>
 
 ENV LANG=C.UTF-8
 

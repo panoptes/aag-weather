@@ -23,7 +23,7 @@ def get_records(sql_query):
                                 parse_dates=['date'],
                                 coerce_float=True)
 
-    return records.sort_index().to_json(orient='records', date_format='iso')
+    return records.sort_index(ascending=False).reset_index().to_json(orient='records', date_format='iso')
 
 
 @app.route('/', methods=['GET', 'POST'])
@@ -79,3 +79,4 @@ def today():
 def download_db():
     """Download the sqlite3 database """
     return send_file(DB_FILE, as_attachment=True)
+

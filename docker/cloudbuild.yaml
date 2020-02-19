@@ -1,18 +1,11 @@
 steps:
-# Build
 - name: 'gcr.io/cloud-builders/docker'
-  id: 'amd64-base'
   args:
   - 'build'
   - '-f=docker/Dockerfile'
-  - '--tag=gcr.io/${PROJECT_ID}/aag-weather:latest'
+  - '--tag=gcr.io/${PROJECT_ID}/aag-weather'
   - '.'
-  waitFor: ['-']
 
-# Push
-- name: 'gcr.io/cloud-builders/docker'
-  id: 'push-amd64-base'
-  args:
-  - 'push'
-  - 'gcr.io/${PROJECT_ID}/aag-weather:latest'
-  waitFor: ['amd64-base']
+# aag-weather is pushed to Container Registry
+images:
+- 'gcr.io/$PROJECT_ID/aag-weather'

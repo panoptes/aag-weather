@@ -6,6 +6,6 @@ steps:
   - '--tag=gcr.io/${PROJECT_ID}/aag-weather'
   - '.'
 
-# aag-weather is pushed to Container Registry
+# Push to Container Registry
 images:
 - 'gcr.io/$PROJECT_ID/aag-weather'

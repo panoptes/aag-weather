@@ -11,9 +11,9 @@ services:
       - "python"
       - "/app/scripts/read-aag.py"
       - "--config-file"
-      - "/app/config.yaml"
+      - "/data/config.yaml"
       - "--db-file"
-      - "/app/weather.db"
+      - "/data/weather.db"
       - "--store-result"
   aag-weather-server:
     image: gcr.io/panoptes-exp/aag-weather:latest
@@ -25,3 +25,5 @@ services:
     command:
       - "flask"
       - "run"
+volumes:
+    - ./:/data

@@ -1,22 +1,44 @@
 aag-weather
 ===========
 
+- [aag-weather](#aag-weather)
+  - [Configuration](#configuration)
+  - [Running via docker](#running-via-docker)
+    - [Getting the Docker image](#getting-the-docker-image)
+    - [Running a Docker container](#running-a-docker-container)
+  - [Runnig via scripts](#runnig-via-scripts)
+    - [Install](#install)
+    - [Running](#running)
+      - [Read AAG](#read-aag)
+      - [Serve AAG data](#serve-aag-data)
+        - [Configure Flask Server](#configure-flask-server)
+        - [Running Flask Server](#running-flask-server)
+
+
 A small script that is capable of reading the [Lunatico AAG Cloud Watcher](https://www.lunatico.es/ourproducts/aag-cloud-watcher.html) weather station data, including the anemometer.
 
-## Docker
+This can either be run via [Docker](#docker-service) or as [scripts](#manual-service) on your host.
 
-The docker image exists on the Google Cloud Container Registry.  To download
+## Configuration
+
+The agg-weather service needs a configuration file to help it connect to the device,
+interpret the results (i.e. safety threshold limits), and to help with plotting.
+
+An example configuration is included in [`config.yaml`](config.yaml).
+
+At a very minimum the correct `serial_port` should be changed to match that of the AAG.  If using
+the `serve-aag.py` script (as opposed to the Docker image), then you can also pass the serial port on the command line.
+
+## Running via docker
+
+There is a docker image that can be used to run both the `aag-reader` (read from the AAG device)
+as well as the `aag-server` (minimal web server to view results).
 
 ### Getting the Docker image
 
 ```bash
 docker pull gcr.io/panoptes-exp/aag-weather
 ```
-
-### Configure the aag-weather services
-
-The services will read from the
-
 
 ### Running a Docker container
 
@@ -25,16 +47,17 @@ start two containers: `aag-weather-server` and `aag-weather-reader`.
 
 The `aag-weather-server` is responsible for communication with the AAG and therefore needs access to the serial device. Results are written to a simple sqlite3 database.
 
-The `aag-weather-reader` starts a small flask web server that returns the most recent results.
+The `aag-weather-reader` starts a small flask web server that returns the most recent results as JSON.
 
-Docker compose files can be started with:
+1. Create a directory to hold the config and data: `mkdir my-aag-weather`
+2. Create a `config.yaml` as per [instructions](#configuration) and place in the `my-aag-weather` directory.
+3. Create (or copy) the `docker-compose.yaml` file into the `my-aag-weather` directory.
+4. Start the service with `docker-compose up`.
+5. Access the latest reading at the url `http://localhost:5000/`
 
-```bash
-docker-compose --file docker/docker-compose.yaml up
-```
+## Runnig via scripts
 
-
-## Install
+### Install
 
 Clone the repository and then run either:
 
@@ -50,9 +73,9 @@ pip install -r requirements.txt
 pip install -e .
 ```
 
-## Running
+### Running
 
-### Read AAG
+#### Read AAG
 
 The `scripts/read-aag.py` file is responsible for reading the serial data from the AAG. It requires
 a config file in order to properly read from the AAG, with default values provided by `config.yaml`.
@@ -80,7 +103,7 @@ optional arguments:
   --verbose             Output data on the command line.
 ```
 
-### Serve AAG data
+#### Serve AAG data
 
 > :warning: **NOTE:** There has been no attempt made to make this secure and Flask runs the development
 server out of the box. This is suitable for testing and a minimal network implementation but should
@@ -96,7 +119,7 @@ The flask server provides two endpoints:
 return the most recent record, but `num_records=5` can be used to return more records.
 * `/download-db`: Will send the `weather.db` as a file attachment for downloading.
 
-#### Configure Flask Server
+##### Configure Flask Server
 
 The Flask server uses [`python-dotenv`](https://flask.palletsprojects.com/en/1.1.x/cli/#environment-variables-from-dotenv) for configuration. To configure, create a `.env` file
 in the main directory and add the **absolute path** to the database file. If a relative path
@@ -120,7 +143,7 @@ FLASK_RUN_HOST=0.0.0.0
 FLASK_RUN_PORT=8989
 ```
 
-#### Running Flask Server
+##### Running Flask Server
 
 The Flask server uses the Flask command line interface. To start, run the following from the root of
 the repository:

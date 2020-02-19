@@ -1,6 +1,37 @@
-# aag-weather
+aag-weather
+===========
 
 A small script that is capable of reading the [Lunatico AAG Cloud Watcher](https://www.lunatico.es/ourproducts/aag-cloud-watcher.html) weather station data, including the anemometer.
+
+## Docker
+
+The docker image exists on the Google Cloud Container Registry.  To download
+
+### Getting the Docker image
+
+```bash
+docker pull gcr.io/panoptes-exp/aag-weather
+```
+
+### Configure the aag-weather services
+
+The services will read from the
+
+
+### Running a Docker container
+
+This repository contains a sample [`docker-compose`](https://docs.docker.com/compose/) file that will
+start two containers: `aag-weather-server` and `aag-weather-reader`.
+
+The `aag-weather-server` is responsible for communication with the AAG and therefore needs access to the serial device. Results are written to a simple sqlite3 database.
+
+The `aag-weather-reader` starts a small flask web server that returns the most recent results.
+
+Docker compose files can be started with:
+
+```bash
+docker-compose --file docker/docker-compose.yaml up
+```
 
 
 ## Install
@@ -76,7 +107,7 @@ Example `.env` file:
 
 ```bash
 FLASK_DEBUG=1
-DB_NAME=/home/pi/aag-weather/weather.db
+DB_FILE=/home/pi/aag-weather/weather.db
 ```
 
 If you would like to make the server available at your public IP address, add the host to
@@ -88,7 +119,6 @@ the `.env` file, e.g.:
 FLASK_RUN_HOST=0.0.0.0
 FLASK_RUN_PORT=8989
 ```
-
 
 #### Running Flask Server
 

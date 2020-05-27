@@ -15,6 +15,8 @@ services:
       - "--db-file"
       - "/data/weather.db"
       - "--store-result"
+    volumes:
+      - ./:/data
   aag-weather-server:
     image: gcr.io/panoptes-exp/aag-weather:latest
     init: true
@@ -25,5 +27,7 @@ services:
     command:
       - "flask"
       - "run"
-volumes:
-    - ./:/data
+    environment:
+      - DB_NAME=/data/weather.db
+    volumes:
+      - ./:/data

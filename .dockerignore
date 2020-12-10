@@ -1,0 +1,21 @@
+examples/*
+docs/*
+.git/*
+
+# emacs backups
+*~
+\#*\#
+
+# TeX products
+*.aux
+*.log
+*.pdf
+*.toc
+
+# Compiled files
+*.py[co]
+*.a
+*.o
+*.so
+__pycache__
+.eggs*

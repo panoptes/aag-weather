@@ -1,0 +1,33 @@
+version: '3.7'
+services:
+  aag-weather-reader:
+    image: gcr.io/panoptes-exp/aag-weather:latest
+    init: true
+    container_name: aag-weather-reader
+    privileged: true
+    network_mode: host
+    restart: on-failure
+    command:
+      - "python"
+      - "/app/scripts/read-aag.py"
+      - "--config-file"
+      - "/data/config.yaml"
+      - "--db-file"
+      - "/data/weather.db"
+      - "--store-result"
+    volumes:
+      - ./:/data
+  aag-weather-server:
+    image: gcr.io/panoptes-exp/aag-weather:latest
+    init: true
+    container_name: aag-weather-server
+    privileged: true
+    network_mode: host
+    restart: on-failure
+    command:
+      - "flask"
+      - "run"
+    environment:
+      - DB_NAME=/data/weather.db
+    volumes:
+      - ./:/data

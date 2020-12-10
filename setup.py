@@ -23,13 +23,21 @@ NAME = metadata.get('name', 'aag-weather')
 PACKAGENAME = metadata.get('package_name', 'packagename')
 URL = metadata.get('url', 'https://projectpanoptes.org')
 
-requirements = list()
-requirements_fn = 'requirements.txt'
-with open(requirements_fn) as f:
-    requirements = f.read().splitlines()
 
 modules = {
-    'required': requirements,
+    'required': [
+        'astroplan>=0.6',
+        'astropy>=4.0.0',
+        'Flask',
+        'matplotlib',
+        'numpy',
+        'pandas',
+        'pyserial',
+        'python-dateutil',
+        'python-dotenv',
+        'pyyaml > 5.0.0',
+        'sqlalchemy',
+    ],
     'testing': [
         'codecov',
         'coverage',
@@ -53,12 +61,8 @@ setup(name=PACKAGENAME,
       keywords=KEYWORDS,
       python_requires='>=3.6',
       setup_requires=['pytest-runner'],
-      tests_require=modules['testing'],
-      # List additional groups of dependencies here (e.g. development
-      # dependencies). You can install these using the following syntax,
-      # for example:
-      # $ pip install -e .[dev,test]
       install_requires=modules['required'],
+      tests_require=modules['testing'],
       packages=find_namespace_packages(exclude=['tests', 'test_*']),
       classifiers=[
           'Development Status :: 3 - Alpha',

@@ -12,28 +12,21 @@ import pandas as pd
 
 app = Flask(__name__)
 
-DB_FILE = os.getenv('DB_NAME', 'weather.db')
+DB_FILE = os.getenv('DB_FILE', 'weather.db')
+DB_TABLE = os.getenv('DB_TABLE', 'weather')
 DB_ENGINE = create_engine(f'sqlite:///{DB_FILE}', echo=False)
 
 
-def get_table():
-    return pd.read_sql_table('weather', DB_ENGINE).sort_values(by='date')
+def get_records(sql_query):
+    records = pd.read_sql_query(sql_query, DB_ENGINE,
+                                index_col='date',
+                                parse_dates=['date'],
+                                coerce_float=True)
+
+    return records.sort_index(ascending=False).reset_index().to_json(orient='records', date_format='iso')
 
 
-def get_records(num_records=1):
-    # Start from the end so make negative.
-    table = get_table()
-    num_records = int(num_records) * -1
-    return table.iloc[num_records:].to_json(orient='records', date_format='iso')
-
-
-def get_latest(from_date):
-    # Start from the end so make negative.
-    table = get_table().set_index('date')
-    return table.loc[from_date.isoformat():].reset_index('date').sort_values(
-        by='date').to_json(orient='records', date_format='iso')
-
-
+@app.route('/', methods=['GET', 'POST'])
 @app.route('/latest.json', methods=['GET', 'POST'])
 def latest():
     """Get the latest records as JSON.
@@ -49,7 +42,13 @@ def latest():
         num_records = params.get('num_records', 1)
 
     # Get number of records.
-    records = get_records(num_records)
+    sql_query = f'''
+        SELECT *
+        FROM {DB_TABLE}
+        ORDER BY date DESC
+        LIMIT {num_records}
+    '''
+    records = get_records(sql_query)
 
     return Response(records, mimetype='application/json')
 
@@ -66,7 +65,12 @@ def today():
     from_date = dt.now() + rd(dt.now(), days=-1)
 
     # Get latest from date.
-    records = get_latest(from_date)
+    sql_query = f'''
+        SELECT *
+        FROM {DB_TABLE}
+        WHERE date >= '{from_date}'
+    '''
+    records = get_records(sql_query)
 
     return Response(records, mimetype='application/json')
 
@@ -75,3 +79,4 @@ def today():
 def download_db():
     """Download the sqlite3 database """
     return send_file(DB_FILE, as_attachment=True)
+

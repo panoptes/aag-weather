@@ -1,13 +1,12 @@
 import sqlite3
-import numpy as np
 import re
-import serial
 import sys
 import time
 import logging
-
 from datetime import datetime as dt
 
+import numpy as np
+import serial
 import astropy.units as u
 
 from .PID import PID
@@ -25,7 +24,6 @@ def movingaverage(interval, window_size):
 # AAG Cloud Sensor Class
 # -----------------------------------------------------------------------------
 class AAGCloudSensor(object):
-
     """
     This class is for the AAG Cloud Sensor device which can be communicated with
     via serial commands.
@@ -765,7 +763,7 @@ class AAGCloudSensor(object):
             # Set PWM Based on Impulse Method or Normal Method
             if self.impulse_heating:
                 target_temp = float(last_entry['ambient_temp_C']) + \
-                    float(self.heater_cfg['impulse_temp'])
+                              float(self.heater_cfg['impulse_temp'])
                 if last_entry['rain_sensor_temp_C'] < target_temp:
                     logger.debug('  Rain sensor temp < target.  Setting heater to 100 %.')
                     self.set_PWM(100)
@@ -780,22 +778,23 @@ class AAGCloudSensor(object):
                 elif last_entry['ambient_temp_C'] > self.heater_cfg['high_temp']:
                     deltaT = self.heater_cfg['high_delta']
                 else:
-                    frac = (last_entry['ambient_temp_C'] - self.heater_cfg['low_temp']) /\
+                    frac = (last_entry['ambient_temp_C'] - self.heater_cfg['low_temp']) / \
                            (self.heater_cfg['high_temp'] - self.heater_cfg['low_temp'])
                     deltaT = self.heater_cfg['low_delta'] + frac * \
-                        (self.heater_cfg['high_delta'] - self.heater_cfg['low_delta'])
+                             (self.heater_cfg['high_delta'] - self.heater_cfg['low_delta'])
                 target_temp = last_entry['ambient_temp_C'] + deltaT
                 new_PWM = int(self.heater_PID.recalculate(float(last_entry['rain_sensor_temp_C']),
                                                           new_set_point=target_temp))
                 logger.debug('  last PID interval = {:.1f} s'.format(
                     self.heater_PID.last_interval))
-                logger.debug('  target={:4.1f}, actual={:4.1f}, new PWM={:3.0f}, P={:+3.0f}, I={:+3.0f} ({:2d}), D={:+3.0f}'.format(
-                    target_temp, float(last_entry['rain_sensor_temp_C']),
-                    new_PWM, self.heater_PID.Kp * self.heater_PID.Pval,
-                    self.heater_PID.Ki * self.heater_PID.Ival,
-                    len(self.heater_PID.history),
-                    self.heater_PID.Kd * self.heater_PID.Dval,
-                ))
+                logger.debug(
+                    '  target={:4.1f}, actual={:4.1f}, new PWM={:3.0f}, P={:+3.0f}, I={:+3.0f} ({:2d}), D={:+3.0f}'.format(
+                        target_temp, float(last_entry['rain_sensor_temp_C']),
+                        new_PWM, self.heater_PID.Kp * self.heater_PID.Pval,
+                                 self.heater_PID.Ki * self.heater_PID.Ival,
+                        len(self.heater_PID.history),
+                                 self.heater_PID.Kd * self.heater_PID.Dval,
+                    ))
                 self.set_PWM(new_PWM)
 
     def make_safety_decision(self, current_values):
@@ -847,7 +846,7 @@ class AAGCloudSensor(object):
         else:
             if max(sky_diff) > threshold_cloudy:
                 logger.debug('UNSAFE: Cloudy in last {} min. Max sky diff {:.1f} C'.format(
-                                  safety_delay, max(sky_diff)))
+                    safety_delay, max(sky_diff)))
                 sky_safe = False
             else:
                 sky_safe = True
@@ -899,8 +898,9 @@ class AAGCloudSensor(object):
 
             # Windy?
             if max(wind_mavg) > threshold_very_windy:
-                logger.debug('  UNSAFE:  Very windy in last {:.0f} min. Max wind speed {:.1f} kph'.format(
-                    safety_delay, max(wind_mavg)))
+                logger.debug(
+                    '  UNSAFE:  Very windy in last {:.0f} min. Max wind speed {:.1f} kph'.format(
+                        safety_delay, max(wind_mavg)))
                 wind_safe = False
             else:
                 wind_safe = True
@@ -916,8 +916,9 @@ class AAGCloudSensor(object):
 
             # Gusty?
             if max(wind_speed) > threshold_very_gusty:
-                logger.debug('  UNSAFE:  Very gusty in last {:.0f} min. Max gust speed {:.1f} kph'.format(
-                    safety_delay, max(wind_speed)))
+                logger.debug(
+                    '  UNSAFE:  Very gusty in last {:.0f} min. Max gust speed {:.1f} kph'.format(
+                        safety_delay, max(wind_speed)))
                 gust_safe = False
             else:
                 gust_safe = True

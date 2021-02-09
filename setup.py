@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # Licensed under an MIT style license - see LICENSE.txt
 
-from setuptools import setup, find_namespace_packages
-
+from setuptools import find_namespace_packages, setup
 from configparser import ConfigParser
 from distutils.command.build_py import build_py
 
@@ -23,32 +22,24 @@ NAME = metadata.get('name', 'aag-weather')
 PACKAGENAME = metadata.get('package_name', 'packagename')
 URL = metadata.get('url', 'https://projectpanoptes.org')
 
-
 modules = {
     'required': [
-        'astroplan>=0.6',
-        'astropy>=4.0.0',
+        'astroplan',
+        'astropy',
         'Flask',
         'matplotlib',
         'numpy',
         'pandas',
-        'pyserial',
+        'panoptes-utils',
         'python-dateutil',
-        'python-dotenv',
-        'pyyaml > 5.0.0',
         'sqlalchemy',
     ],
     'testing': [
-        'codecov',
-        'coverage',
-        'coveralls',
-        'mocket',
-        'pycodestyle==2.3.1',
-        'pytest>=3.6',
+        'pycodestyle',
+        'pytest',
         'pytest-cov',
     ],
 }
-
 
 setup(name=PACKAGENAME,
       version=__version__,

@@ -226,7 +226,7 @@ class AAGCloudSensor(object):
             # Query Firmware Version
             result = self.query('!B')
             if result:
-                self.firmware_version = result[0].strip()
+                self.firmware_version = float(result[0].strip())
                 logger.info('  Firmware Version = {}'.format(self.firmware_version))
             else:
                 self.firmware_version = ''

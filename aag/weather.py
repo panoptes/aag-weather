@@ -233,16 +233,17 @@ class AAGCloudSensor(object):
                 logger.warning('  Failed to get Firmware Version')
                 sys.exit(1)
 
-            # Query Serial Number
-            result = self.query('!K')
-            if result:
-                self.serial_number = result[0].strip()
-                logger.info('  Serial Number: {}'.format(self.serial_number))
-            else:
-                self.serial_number = ''
-                if self.firmware_version <= 5.6:
+            # Query Serial Number if firmware requires.
+            if self.firmware_version <= 5.6:            
+                result = self.query('!K')
+                if result:
+                    self.serial_number = result[0].strip()
+                    logger.info('  Serial Number: {}'.format(self.serial_number))
+                else:
                     logger.warning('  Failed to get required Serial Number')                    
                     sys.exit(1)
+            else:
+                self.serial_number = ''
 
     def send(self, send, delay=0.100):
 

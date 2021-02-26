@@ -29,10 +29,8 @@ class AAGCloudSensor(object):
     """
     This class is for the AAG Cloud Sensor device which can be communicated with
     via serial commands.
-
-    http://www.aagware.eu/aag/cloudwatcherNetwork/TechInfo/Rs232_Comms_v100.pdf
-    http://www.aagware.eu/aag/cloudwatcherNetwork/TechInfo/Rs232_Comms_v110.pdf
-    http://www.aagware.eu/aag/cloudwatcherNetwork/TechInfo/Rs232_Comms_v120.pdf
+    
+    https://lunaticoastro.com/aag-cloud-watcher/moreinfo/
 
     Command List (from Rs232_Comms_v100.pdf)
     !A = Get internal name (recieves 2 blocks)
@@ -242,8 +240,9 @@ class AAGCloudSensor(object):
                 logger.info('  Serial Number: {}'.format(self.serial_number))
             else:
                 self.serial_number = ''
-                logger.warning('  Failed to get Serial Number')
-                sys.exit(1)
+                if self.firmware_version <= 5.6:
+                    logger.warning('  Failed to get required Serial Number')                    
+                    sys.exit(1)
 
     def send(self, send, delay=0.100):
 

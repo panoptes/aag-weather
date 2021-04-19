@@ -37,7 +37,7 @@ def main(config=None,
             data = aag.capture()
             if verbose:
                 print(f'{data!r}')
-            db.insert_collection(collection_name, data, store_permanently=store_result)
+            db.insert_current(collection_name, data, store_permanently=store_result)
             time.sleep(read_delay)
         except KeyboardInterrupt:
             print(f'Cancelled by user, shutting down AAG.')

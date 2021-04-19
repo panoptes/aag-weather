@@ -9,6 +9,7 @@ dependencies:
   - pandas
   - pip
   - python-dateutil
+  - python-dotenv
   - sqlalchemy
   - pip:
       - "git+https://github.com/panoptes/panoptes-utils@develop#egg=panoptes-utils[config,images,social]"

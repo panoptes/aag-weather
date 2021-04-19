@@ -32,6 +32,7 @@ modules = {
         'pandas',
         'panoptes-utils',
         'python-dateutil',
+        'python-dotenv',
         'sqlalchemy',
     ],
     'testing': [

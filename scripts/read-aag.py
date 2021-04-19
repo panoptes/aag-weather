@@ -3,11 +3,18 @@ import sys
 import time
 
 from panoptes.utils.serializers import from_yaml
+from panoptes.utils.database import PanDB
 
 from aag.weather import AAGCloudSensor
 
 
-def main(config=None, config_file=None, store_result=False, read_delay=60, verbose=False, **kwargs):
+def main(config=None,
+         config_file=None,
+         read_delay=60,
+         store_result=False,
+         collection_name='weather',
+         verbose=False,
+         **kwargs):
     if config is None:
         if config_file is None:
             print('Must pass either config or config_file')
@@ -17,6 +24,8 @@ def main(config=None, config_file=None, store_result=False, read_delay=60, verbo
             with open(config_file, 'r') as f:
                 config = from_yaml(f.read())['weather']['aag_cloud']
 
+    db = PanDB(db_type='file')
+
     aag = AAGCloudSensor(config, **kwargs)
 
     if aag.aag_device is None:
@@ -25,12 +34,13 @@ def main(config=None, config_file=None, store_result=False, read_delay=60, verbo
 
     while True:
         try:
-            data = aag.capture(store_result=store_result)
+            data = aag.capture()
             if verbose:
                 print(f'{data!r}')
-
+            db.insert_collection(collection_name, data, store_permanently=store_result)
             time.sleep(read_delay)
         except KeyboardInterrupt:
+            print(f'Cancelled by user, shutting down AAG.')
             break
 
 

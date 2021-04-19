@@ -1,15 +1,22 @@
-def setup_db():
-    # Setup the DB file
-    self.db_conn = sqlite3.connect(db_file)
-    self.db_cursor = self.db_conn.cursor()
-    self._db_table = db_table
+import os
+import sqlite3
+from loguru import logger
 
-def store_result(data):
+DB_FILE = os.getenv('DB_FILE', 'weather.db')
+
+
+def setup_db(db_file=DB_FILE):
+    # Setup the DB file
+    return sqlite3.connect(db_file)
+
+
+def store_result(data, db_table, db_conn):
     """Insert data into database.
 
     Args:
         data (dict): Data read `self.capture`.
     """
+    db_cursor = db_conn.cursor()
 
     # Fix 'errors' columns
     data['errors'] = ' '.join([f'{k}={v}' for k, v in data['errors'].items()])
@@ -20,32 +27,34 @@ def store_result(data):
     column_holders = ','.join(['?' for _ in column_values])
 
     # Build sql for insert
-    insert_sql = f'INSERT INTO {self._db_table} ({column_names}) VALUES ({column_holders})'
+    insert_sql = f'INSERT INTO {db_table} ({column_names}) VALUES ({column_holders})'
 
     # Perform insert
     try:
-        self.db_cursor.execute(insert_sql, column_values)
-        self.db_conn.commit()
+        db_cursor.execute(insert_sql, column_values)
+        db_conn.commit()
     except Exception as e:
         logger.warning(f'Error on insert: {e!r}')
         logger.warning(f'Attempted SQL: {insert_sql}')
 
 
-def check_db_table():
+def check_db_table(db_table, db_conn):
     """Check if db table exists and if not create it.
 
     Args:
         db_table (str): Name of db_table.
     """
+    db_cursor = db_conn.cursor()
+
     table_check_sql = f"""
         SELECT name
         FROM sqlite_master
-        WHERE type='table' AND name='{self._db_table}';
+        WHERE type='table' AND name='{db_table}';
     """
-    self.db_cursor.execute(table_check_sql)
-    if self.db_cursor.fetchone() is None:
+    db_cursor.execute(table_check_sql)
+    if db_cursor.fetchone() is None:
         # Create table
-        self.db_cursor.execute('''
+        db_cursor.execute('''
             CREATE TABLE weather (
                     date DATETIME,
                     weather_sensor_name TEXT,

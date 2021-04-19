@@ -558,11 +558,8 @@ class AAGCloudSensor(object):
             self.wind_speed = None
         return self.wind_speed
 
-    def capture(self, store_result=True, **kwargs):
+    def capture(self, **kwargs):
         """Query the CloudWatcher
-
-        Args:
-            store_result (bool, optional): If True, save data to sqlite db.
 
         Returns:
             dict: Captured data.
@@ -570,10 +567,26 @@ class AAGCloudSensor(object):
 
         logger.debug("Updating weather")
 
-        data = {}
-        data['weather_sensor_name'] = self.name
-        data['weather_sensor_firmware_version'] = self.firmware_version
-        data['weather_sensor_serial_number'] = self.serial_number
+        data = {
+            'weather_sensor_name': self.name,
+            'weather_sensor_firmware_version': self.firmware_version,
+            'weather_sensor_serial_number': self.serial_number,
+            'sky_temp_C': None,
+            'ambient_temp_C': None,
+            'internal_voltage_V': None,
+            'ldr_resistance_Ohm': None,
+            'rain_sensor_temp_C': None,
+            'rain_frequency': None,
+            'pwm_value': None,
+            'errors': None,
+            'wind_speed_KPH': None,
+            'safe': False,
+            'date': dt.utcnow(),
+            'sky_condition': None,
+            'wind_condition': None,
+            'gust_condition': None,
+            'rain_condition': None,
+        }
 
         if self.get_sky_temperature():
             data['sky_temp_C'] = self.sky_temp.value
@@ -603,9 +616,6 @@ class AAGCloudSensor(object):
         data['wind_condition'] = self.safe_dict['Wind']
         data['gust_condition'] = self.safe_dict['Gust']
         data['rain_condition'] = self.safe_dict['Rain']
-
-        # Store current weather
-        data['date'] = dt.utcnow()
 
         # If we get over a certain amount of entries, trim the earliest
         # Todo: change this to a streamz

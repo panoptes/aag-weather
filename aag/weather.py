@@ -230,16 +230,16 @@ class AAGCloudSensor(object):
             return None
 
         logger.debug('  Clearing buffer')
-        cleared = self.aag_device.read(self.aag_device.inWaiting())
+        cleared = self.aag_device.read(self.aag_device.ser.in_waiting)
         if len(cleared) > 0:
-            logger.debug('  Cleared: "{}"'.format(cleared.decode('utf-8')))
+            logger.debug(f'  Cleared: "{cleared}"')
 
-        self.aag_device.write(send.encode('utf-8'))
+        self.aag_device.write(send)
         time.sleep(delay)
 
         result = None
         try:
-            response = self.aag_device.read(self.aag_device.inWaiting()).decode('utf-8')
+            response = self.aag_device.read(self.aag_device.ser.in_waiting)
         except UnicodeDecodeError:
             logger.debug("Error reading from serial line")
         else:

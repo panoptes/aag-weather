@@ -52,8 +52,8 @@ if __name__ == '__main__':
                         help='Config file that contains the AAG params.')
     parser.add_argument('--store-result', default=False, action='store_true',
                         help='If data entries should be saved to db, default False.')
-    parser.add_argument('--db-file', default='weather.db', help='Name of sqlite3 db file to use.')
-    parser.add_argument('--db-table', default='weather', help='Name of db table to use.')
+    parser.add_argument('--collection-name', default='weather',
+                        help='Name of collection for storing results.')
     parser.add_argument('--read-delay', default=60, help='Number of seconds between reads.')
     parser.add_argument('--serial-address', default=None,
                         help='USB serial address to use. If None, value from config will be used.')

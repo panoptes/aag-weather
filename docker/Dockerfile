@@ -37,4 +37,4 @@ RUN echo "Installing ${pip_install_name} module with ${pip_install_extras}" && \
     sudo apt-get --yes clean && \
     sudo rm -rf /var/lib/apt/lists/*
 
-CMD ["python", "/app/scripts/read-aag.py", "--config-file", "/app/config.yaml"]
+CMD ["python /app/scripts/read-aag.py --config-file /app/config.yaml"]

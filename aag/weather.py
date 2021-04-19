@@ -1,16 +1,14 @@
 import re
 import sys
 import time
-import logging
 from datetime import datetime as dt
 
 import numpy as np
 import astropy.units as u
+from loguru import logger
 from panoptes.utils.rs232 import SerialData
 
 from .PID import PID
-
-logger = logging.getLogger(__name__)
 
 
 def movingaverage(interval, window_size):
@@ -32,21 +30,21 @@ class AAGCloudSensor(object):
     https://www.aagware.eu/aag/cloudwatcherNetwork/TechInfo/Rs232_Comms_v120.pdf
 
     Command List (from Rs232_Comms_v100.pdf)
-    !A = Get internal name (recieves 2 blocks)
-    !B = Get firmware version (recieves 2 blocks)
-    !C = Get values (recieves 5 blocks)
+    !A = Get internal name (receives 2 blocks)
+    !B = Get firmware version (receives 2 blocks)
+    !C = Get values (receives 5 blocks)
          Zener voltage, Ambient Temperature, Ambient Temperature, Rain Sensor Temperature, HSB
-    !D = Get internal errors (recieves 5 blocks)
-    !E = Get rain frequency (recieves 2 blocks)
-    !F = Get switch status (recieves 2 blocks)
-    !G = Set switch open (recieves 2 blocks)
-    !H = Set switch closed (recieves 2 blocks)
-    !Pxxxx = Set PWM value to xxxx (recieves 2 blocks)
-    !Q = Get PWM value (recieves 2 blocks)
-    !S = Get sky IR temperature (recieves 2 blocks)
-    !T = Get sensor temperature (recieves 2 blocks)
-    !z = Reset RS232 buffer pointers (recieves 1 blocks)
-    !K = Get serial number (recieves 2 blocks)
+    !D = Get internal errors (receives 5 blocks)
+    !E = Get rain frequency (receives 2 blocks)
+    !F = Get switch status (receives 2 blocks)
+    !G = Set switch open (receives 2 blocks)
+    !H = Set switch closed (receives 2 blocks)
+    !Pxxxx = Set PWM value to xxxx (receives 2 blocks)
+    !Q = Get PWM value (receives 2 blocks)
+    !S = Get sky IR temperature (receives 2 blocks)
+    !T = Get sensor temperature (receives 2 blocks)
+    !z = Reset RS232 buffer pointers (receives 1 blocks)
+    !K = Get serial number (receives 2 blocks)
 
     Return Codes
     '1 '    Infra red temperature in hundredth of degree Celsius
@@ -181,6 +179,8 @@ class AAGCloudSensor(object):
             '!E': 0.350,
             'P\d\d\d\d!': 0.750,
         }
+
+        self._wind_speed_enabled = False
 
         self.weather_entries = list()
 
@@ -515,21 +515,26 @@ class AAGCloudSensor(object):
         logger.debug(f'Switch Status = {self.switch}')
         return self.switch
 
+    @property
     def wind_speed_enabled(self):
         """
         Method returns true or false depending on whether the device supports
         wind speed measurements.
         """
-        logger.debug('Checking if wind speed is enabled')
-        try:
-            enabled = bool(self.query('v!')[0])
-            if enabled:
-                logger.debug('  Anemometer enabled')
-            else:
-                logger.debug('  Anemometer not enabled')
-        except Exception:
-            enabled = None
-        return enabled
+        if self._wind_speed_enabled is None:
+            logger.debug('Checking if wind speed is enabled')
+            try:
+                enabled = bool(self.query('v!')[0])
+                if enabled:
+                    logger.debug('  Anemometer enabled')
+                    self._wind_speed_enabled = True
+                else:
+                    logger.debug('  Anemometer not enabled')
+                    self._wind_speed_enabled = False
+            except Exception as e:
+                logger.warning(f'Error checking the wind speed: {e!r}')
+
+        return self._wind_speed_enabled
 
     def get_wind_speed(self, n=3):
         """
@@ -541,7 +546,7 @@ class AAGCloudSensor(object):
         but I'm guessing it won't hurt.
         """
         logger.debug('Getting wind speed')
-        if self.wind_speed_enabled():
+        if self.wind_speed_enabled:
             values = []
             for i in range(0, n):
                 result = self.query('V!')
@@ -598,7 +603,7 @@ class AAGCloudSensor(object):
         if self.ldr_resistance:
             data['ldr_resistance_Ohm'] = self.ldr_resistance.value
         if self.rain_sensor_temp:
-            data['rain_sensor_temp_C'] = "{:.02f}".format(self.rain_sensor_temp.value)
+            data['rain_sensor_temp_C'] = f'{self.rain_sensor_temp.value:.02f}'
         if self.get_rain_frequency():
             data['rain_frequency'] = self.rain_frequency
         if self.get_PWM():

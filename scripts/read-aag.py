@@ -1,26 +1,25 @@
 #!/usr/bin/env python3
 import sys
 import time
-from yaml import full_load
+
+from panoptes.utils.serializers import from_yaml
 
 from aag.weather import AAGCloudSensor
 
 
-def main(config_file=None, store_result=False, read_delay=60, verbose=False, **kwargs):
-    if config_file is None:
-        print('Must pass config_file')
-        return
-
-    # Read configuration
-    try:
-        with open(config_file, 'r') as f:
-            config = full_load(f.read())['weather']['aag_cloud']
-    except Exception as e:
-        raise Exception(f'Invalid configuration file: {e!r}')
+def main(config=None, config_file=None, store_result=False, read_delay=60, verbose=False, **kwargs):
+    if config is None:
+        if config_file is None:
+            print('Must pass either config or config_file')
+            return
+        else:
+            # Read configuration
+            with open(config_file, 'r') as f:
+                config = from_yaml(f.read())['weather']['aag_cloud']
 
     aag = AAGCloudSensor(config, **kwargs)
 
-    if aag.AAG is None:
+    if aag.aag_device is None:
         print(f'No AAG found, check log for details')
         sys.exit(1)
 

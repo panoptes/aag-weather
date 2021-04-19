@@ -15,25 +15,8 @@ services:
       - "/app/scripts/read-aag.py"
       - "--config-file"
       - "/data/config.yaml"
-      - "--db-file"
-      - "/data/weather.db"
+      - "--storage-dir"
+      - "/data"
       - "--store-result"
-    volumes:
-      - ./:/data
-  aag-weather-server:
-    image: "${IMAGE_NAME:-gcr.io/panoptes-exp/aag-weather}:${TAG_NAME:-develop}"
-    build:
-      context: ../
-      dockerfile: ./docker/Dockerfile
-    init: true
-    container_name: aag-weather-server
-    privileged: true
-    network_mode: host
-    restart: on-failure
-    command:
-      - "flask"
-      - "run"
-    environment:
-      - DB_NAME=/data/weather.db
     volumes:
       - ./:/data

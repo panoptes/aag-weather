@@ -2,8 +2,8 @@
 import sys
 import time
 
+from panoptes.utils.database.file import PanFileDB
 from panoptes.utils.serializers import from_yaml
-from panoptes.utils.database import PanDB
 
 from aag.weather import AAGCloudSensor
 
@@ -12,7 +12,8 @@ def main(config=None,
          config_file=None,
          read_delay=60,
          store_result=False,
-         collection_name='weather',
+         storage_name='weather',
+         storage_dir='.',
          verbose=False,
          **kwargs):
     if config is None:
@@ -24,7 +25,7 @@ def main(config=None,
             with open(config_file, 'r') as f:
                 config = from_yaml(f.read())['weather']['aag_cloud']
 
-    db = PanDB(db_type='file')
+    db = PanFileDB(storage_dir=storage_dir)
 
     aag = AAGCloudSensor(config, **kwargs)
 
@@ -37,7 +38,7 @@ def main(config=None,
             data = aag.capture()
             if verbose:
                 print(f'{data!r}')
-            db.insert_current(collection_name, data, store_permanently=store_result)
+            db.insert_current(storage_name, data, store_permanently=store_result)
             time.sleep(read_delay)
         except KeyboardInterrupt:
             print(f'Cancelled by user, shutting down AAG.')
@@ -52,8 +53,10 @@ if __name__ == '__main__':
                         help='Config file that contains the AAG params.')
     parser.add_argument('--store-result', default=False, action='store_true',
                         help='If data entries should be saved to db, default False.')
-    parser.add_argument('--collection-name', default='weather',
+    parser.add_argument('--storage-name', default='weather',
                         help='Name of collection for storing results.')
+    parser.add_argument('--storage-dir', default='.',
+                        help='Directory for storing results, default current dir.')
     parser.add_argument('--read-delay', default=60, help='Number of seconds between reads.')
     parser.add_argument('--serial-address', default=None,
                         help='USB serial address to use. If None, value from config will be used.')

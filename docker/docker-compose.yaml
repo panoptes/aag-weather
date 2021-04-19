@@ -1,7 +1,10 @@
 version: '3.7'
 services:
   aag-weather-reader:
-    image: gcr.io/panoptes-exp/aag-weather:latest
+    image: "${IMAGE_NAME:-gcr.io/panoptes-exp/aag-weather}:${TAG_NAME:-develop}"
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
     init: true
     container_name: aag-weather-reader
     privileged: true
@@ -18,7 +21,10 @@ services:
     volumes:
       - ./:/data
   aag-weather-server:
-    image: gcr.io/panoptes-exp/aag-weather:latest
+    image: "${IMAGE_NAME:-gcr.io/panoptes-exp/aag-weather}:${TAG_NAME:-develop}"
+    build:
+      context: ../
+      dockerfile: ./docker/Dockerfile
     init: true
     container_name: aag-weather-server
     privileged: true

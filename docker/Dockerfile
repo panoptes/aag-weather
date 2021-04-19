@@ -1,23 +1,40 @@
-FROM python:3.7-slim as base
-LABEL MAINTAINER Developers for PANOPTES project<https://projectpanoptes.org>
+ARG image_url=gcr.io/panoptes-exp/panoptes-utils
+ARG image_tag=develop
+FROM ${image_url}:${image_tag} AS pocs-base
 
-ENV LANG=C.UTF-8
+LABEL description="PANOPTES AAG Weather Service"
+LABEL maintainers="developers@projectpanoptes.org"
+LABEL repo="github.com/panoptes/aag-weather"
 
-COPY . /app
+ENV DEBIAN_FRONTEND=noninteractive
+ENV LANG=C.UTF-8 LC_ALL=C.UTF-8
 
-RUN apt-get update && \
-    apt-get install -y --no-install-recommends \
-        pkg-config git gcc build-essential libfreetype6-dev && \
-    pip install --no-cache-dir -r /app/requirements.txt && \
-    # Cleanup apt.
-    apt-get autoremove --purge -y gcc build-essential pkg-config git && \
-    apt-get autoremove --purge -y && \
-    apt-get -y clean && \
-    rm -rf /var/lib/apt/lists/*
+ARG userid=1000
+ENV USERID $userid
 
-RUN cd /app && \
-    pip install --no-cache-dir .
+ARG app_dir=/app
+ENV APP_DIR $app_dir
 
-WORKDIR /app
+WORKDIR "${APP_DIR}"
+USER "${userid}"
+
+# Update conda environment with dependencies.
+COPY docker/environment.yaml .
+RUN /conda/bin/conda env update -n base -f environment.yaml
+
+ARG pip_install_name="."
+ARG pip_install_extras=""
+
+COPY --chown="${userid}:${userid}" . .
+RUN echo "Installing ${pip_install_name} module with ${pip_install_extras}" && \
+    /conda/bin/pip install --no-cache-dir "${pip_install_name}${pip_install_extras}" && \
+    # Cleanup
+    /conda/bin/pip cache purge && \
+    /conda/bin/conda clean -tipsy && \
+    sudo apt-get autoremove --purge --yes \
+        gcc pkg-config && \
+    sudo apt-get autoclean --yes && \
+    sudo apt-get --yes clean && \
+    sudo rm -rf /var/lib/apt/lists/*
 
 CMD ["python", "/app/scripts/read-aag.py", "--config-file", "/app/config.yaml"]

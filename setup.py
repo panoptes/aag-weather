@@ -33,7 +33,6 @@ modules = {
         'panoptes-utils',
         'python-dateutil',
         'python-dotenv',
-        'sqlalchemy',
     ],
     'testing': [
         'pycodestyle',

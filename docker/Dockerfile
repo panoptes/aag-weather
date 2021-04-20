@@ -20,17 +20,17 @@ USER "${userid}"
 
 # Update conda environment with dependencies.
 COPY docker/environment.yaml .
-RUN /conda/bin/conda env update -n base -f environment.yaml
+RUN conda env update -n base -f environment.yaml
 
 ARG pip_install_name="."
 ARG pip_install_extras=""
 
 COPY --chown="${userid}:${userid}" . .
 RUN echo "Installing ${pip_install_name} module with ${pip_install_extras}" && \
-    /conda/bin/pip install --no-cache-dir "${pip_install_name}${pip_install_extras}" && \
+    pip install --no-cache-dir "${pip_install_name}${pip_install_extras}" && \
     # Cleanup
-    /conda/bin/pip cache purge && \
-    /conda/bin/conda clean -tipsy && \
+    pip cache purge && \
+    conda clean -tipy --force-pkgs-dirs && \
     sudo apt-get autoremove --purge --yes \
         gcc pkg-config && \
     sudo apt-get autoclean --yes && \

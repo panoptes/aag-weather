@@ -178,9 +178,11 @@ class AAGCloudSensor(object):
         self.delays = {
             '!E': 0.350,
             'P\d\d\d\d!': 0.750,
+            'V!': 0.4,
         }
 
         self._wind_speed_enabled = None
+        self.rain_frequency = None
 
         self.weather_entries = list()
 
@@ -287,15 +289,14 @@ class AAGCloudSensor(object):
         logger.debug('Getting ambient temperature')
         values = []
 
-        for i in range(0, n):
-            try:
-                value = float(self.query('!T')[0])
-                ambient_temp = value / 100.
-            except Exception as e:
-                pass
-            else:
-                logger.debug(f'Ambient Temperature Query = {value:.1f}\t{ambient_temp:.1f}')
-                values.append(ambient_temp)
+        try:
+            value = float(self.query('!T')[0])
+            ambient_temp = value / 100.
+        except Exception:
+            pass
+        else:
+            logger.debug(f'Ambient Temperature Query = {value:.1f}\t{ambient_temp:.1f}')
+            values.append(ambient_temp)
 
         if len(values) >= n - 1:
             self.ambient_temp = np.median(values) * u.Celsius
@@ -321,7 +322,7 @@ class AAGCloudSensor(object):
         for i in range(0, n):
             try:
                 value = float(self.query('!S')[0]) / 100.
-            except Exception as e:
+            except Exception:
                 pass
             else:
                 logger.debug(f'Sky Temperature Query = {value:.1f}')

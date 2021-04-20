@@ -180,7 +180,7 @@ class AAGCloudSensor(object):
             'P\d\d\d\d!': 0.750,
         }
 
-        self._wind_speed_enabled = False
+        self._wind_speed_enabled = None
 
         self.weather_entries = list()
 
@@ -244,7 +244,7 @@ class AAGCloudSensor(object):
             logger.debug("Error reading from serial line")
         else:
             logger.debug(f'Response: "{response}"')
-            response_match = re.match('(!.*)\\x11\s{12}0', response)
+            response_match = re.match(r'(!.*)\\x11\s{12}0', response)
             if response_match:
                 result = response_match.group(1)
             else:
@@ -253,22 +253,14 @@ class AAGCloudSensor(object):
         return result
 
     def query(self, send, maxtries=5):
-        found_command = False
-        for cmd in self.commands.keys():
-            if re.match(cmd, send):
-                logger.debug(f'Sending command: {self.commands[cmd]}')
-                found_command = True
-                break
-        if not found_command:
-            logger.warning(f'Unknown command: "{send}"')
-            return None
-
         if send in self.delays.keys():
             logger.debug(f'Waiting delay time of {self.delays[send]:.3f} s')
             delay = self.delays[send]
         else:
             delay = 0.200
+
         expect = self.expects[send]
+
         count = 0
         result = None
         while not result and (count <= maxtries):

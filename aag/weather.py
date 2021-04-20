@@ -684,9 +684,9 @@ class AAGCloudSensor(object):
         last_entry = self.weather_entries[-1]
         rain_history = [x['rain_safe'] for x in entries if 'rain_safe' in x.keys()]
 
-        if 'ambient_temp_C' not in last_entry.keys():
+        if 'ambient_temp_C' not in last_entry and last_entry['ambient_temp_C'] is not None:
             logger.warning('No Ambient Temperature measurement. Can not determine PWM value.')
-        elif 'rain_sensor_temp_C' not in last_entry.keys():
+        elif 'rain_sensor_temp_C' not in last_entry and last_entry['rain_sensor_temp_C'] is not None:
             logger.warning('No Rain Sensor Temperature measurement. Can not determine PWM value.')
         else:
             # Decide whether to use the impulse heating mechanism

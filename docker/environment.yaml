@@ -1,0 +1,14 @@
+channels:
+  - https://conda.anaconda.org/conda-forge
+dependencies:
+  - Flask
+  - astroplan
+  - astropy
+  - matplotlib-base
+  - numpy
+  - pandas
+  - pip
+  - python-dateutil
+  - python-dotenv
+  - pip:
+      - "git+https://github.com/panoptes/panoptes-utils@develop#egg=panoptes-utils[config,images,social]"

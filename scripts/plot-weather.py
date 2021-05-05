@@ -1,33 +1,14 @@
 #!/usr/bin/env python3
 
-import sys
-import warnings
-import logging
-from sqlalchemy import create_engine
 import pandas as pd
 from pandas.io.json import json_normalize
+from loguru import logger
 
 from aag.plotter import WeatherPlotter
-
-logging.basicConfig()
-logger = logging.getLogger('aag-weather-plotter')
 
 
 def label_pos(lim, pos=0.85):
     return lim[0] + pos * (lim[1] - lim[0])
-
-
-def load_sqlite_db(db_file):
-    # Set up db
-    db_engine = create_engine(f'sqlite:///{db_file}', echo=False)
-
-    table = pd.read_sql_table('weather', db_engine).set_index('date').sort_index()
-
-    if table is None:
-        warnings.warn("No data")
-        sys.exit(0)
-
-    return table
 
 
 def load_json_file(json_file):
@@ -43,34 +24,20 @@ def load_json_file(json_file):
 
 if __name__ == '__main__':
     import argparse
+
     parser = argparse.ArgumentParser(
         description="Make a plot of the weather for a give date.")
     parser.add_argument('-c', '--config-file', required=True,
                         help='Config file that contains the AAG params.')
-    # Data args for building dataframe:
-    #   Either get name of sqlite db and table
-    #   Or get json file
-    group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument('--db-file',
-                       help='Name of sqlite3 db file to use, must contain a "weather" table')
-    group.add_argument('--json-file', help='Name of json file to use')
+    parser.add_argument('--json-file', help='Name of json file to use')
     parser.add_argument("-d", "--date", type=str, dest="date",
                         default=None, help="UT Date to plot")
     parser.add_argument("-o", "--plot-file", type=str, dest="plot_file",
                         default='today.png', help="Filename for generated plot")
-    parser.add_argument('--verbose', action='store_true', default=False,
-                        help='Output data on the command line.')
     args = parser.parse_args()
 
-    if args.verbose:
-        logger.setLevel(logging.DEBUG)
-
-    if args.db_file:
-        logger.debug('Loading data from DB file')
-        df0 = load_sqlite_db(args.db_file)
-    else:
-        logger.debug('Loading data from json file')
-        df0 = load_json_file(args.json_file)
+    logger.debug(f'Loading data from json {args.json_file}')
+    df0 = load_json_file(args.json_file)
 
     wp = WeatherPlotter(df0, config_file=args.config_file, date_string=args.date)
     wp.make_plot(output_file=args.plot_file)

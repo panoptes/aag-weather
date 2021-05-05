@@ -1,8 +1,7 @@
 #!/usr/bin/env python
 # Licensed under an MIT style license - see LICENSE.txt
 
-from setuptools import setup, find_namespace_packages
-
+from setuptools import find_namespace_packages, setup
 from configparser import ConfigParser
 from distutils.command.build_py import build_py
 
@@ -23,32 +22,24 @@ NAME = metadata.get('name', 'aag-weather')
 PACKAGENAME = metadata.get('package_name', 'packagename')
 URL = metadata.get('url', 'https://projectpanoptes.org')
 
-
 modules = {
     'required': [
-        'astroplan>=0.6',
-        'astropy>=4.0.0',
+        'astroplan',
+        'astropy',
         'Flask',
         'matplotlib',
         'numpy',
         'pandas',
-        'pyserial',
+        'panoptes-utils',
         'python-dateutil',
         'python-dotenv',
-        'pyyaml > 5.0.0',
-        'sqlalchemy',
     ],
     'testing': [
-        'codecov',
-        'coverage',
-        'coveralls',
-        'mocket',
-        'pycodestyle==2.3.1',
-        'pytest>=3.6',
+        'pycodestyle',
+        'pytest',
         'pytest-cov',
     ],
 }
-
 
 setup(name=PACKAGENAME,
       version=__version__,
@@ -59,7 +50,7 @@ setup(name=PACKAGENAME,
       license=LICENSE,
       url=URL,
       keywords=KEYWORDS,
-      python_requires='>=3.6',
+      python_requires='>=3.8',
       setup_requires=['pytest-runner'],
       install_requires=modules['required'],
       tests_require=modules['testing'],
@@ -72,8 +63,7 @@ setup(name=PACKAGENAME,
           'Operating System :: POSIX',
           'Programming Language :: C',
           'Programming Language :: Python :: 3',
-          'Programming Language :: Python :: 3.6',
-          'Programming Language :: Python :: 3.7',
+          'Programming Language :: Python :: 3.8',
           'Programming Language :: Python :: 3 :: Only',
           'Topic :: Scientific/Engineering :: Astronomy',
           'Topic :: Scientific/Engineering :: Physics',

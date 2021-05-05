@@ -289,14 +289,15 @@ class AAGCloudSensor(object):
         logger.debug('Getting ambient temperature')
         values = []
 
-        try:
-            value = float(self.query('!T')[0])
-            ambient_temp = value / 100.
-        except Exception:
-            pass
-        else:
-            logger.debug(f'Ambient Temperature Query = {value:.1f}\t{ambient_temp:.1f}')
-            values.append(ambient_temp)
+        for i in range(0, n):
+            try:
+                value = float(self.query('!T')[0])
+                ambient_temp = value / 100.
+            except Exception:
+                pass
+            else:
+                logger.debug(f'Ambient Temperature Query = {value:.1f}\t{ambient_temp:.1f}')
+                values.append(ambient_temp)
 
         if len(values) >= n - 1:
             self.ambient_temp = np.median(values) * u.Celsius
@@ -686,7 +687,8 @@ class AAGCloudSensor(object):
 
         if 'ambient_temp_C' not in last_entry and last_entry['ambient_temp_C'] is not None:
             logger.warning('No Ambient Temperature measurement. Can not determine PWM value.')
-        elif 'rain_sensor_temp_C' not in last_entry and last_entry['rain_sensor_temp_C'] is not None:
+        elif 'rain_sensor_temp_C' not in last_entry and last_entry[
+            'rain_sensor_temp_C'] is not None:
             logger.warning('No Rain Sensor Temperature measurement. Can not determine PWM value.')
         else:
             # Decide whether to use the impulse heating mechanism
@@ -702,7 +704,7 @@ class AAGCloudSensor(object):
                     else:
                         logger.debug(f'Impulse heating has been on for {impulse_time:.0f} seconds')
                 else:
-                    logger.debug('  Starting impulse heating sequence.')
+                    logger.debug('  Starting imgitpulse heating sequence.')
                     self.impulse_start = now
                     self.impulse_heating = True
             else:

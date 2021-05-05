@@ -208,7 +208,7 @@ class AAGCloudSensor(object):
                 sys.exit(1)
 
             # Query Serial Number if firmware requires.
-            if self.firmware_version <= 5.6:
+            if self.firmware_version < 5.6:
                 result = self.query('!K')
                 if result:
                     self.serial_number = result[0].strip()

@@ -597,7 +597,7 @@ class AAGCloudSensor(object):
         if self.ldr_resistance is not None:
             data['ldr_resistance_Ohm'] = self.ldr_resistance.value
         if self.rain_sensor_temp is not None:
-            data['rain_sensor_temp_C'] = f'{self.rain_sensor_temp.value:.02f}'
+            data['rain_sensor_temp_C'] = round(self.rain_sensor_temp.value, 2)
         if self.get_rain_frequency() is not None:
             data['rain_frequency'] = self.rain_frequency
         if self.get_PWM() is not None:

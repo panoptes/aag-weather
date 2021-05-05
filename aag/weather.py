@@ -586,24 +586,24 @@ class AAGCloudSensor(object):
             'rain_condition': None,
         }
 
-        if self.get_sky_temperature():
+        if self.get_sky_temperature() is not None:
             data['sky_temp_C'] = self.sky_temp.value
-        if self.get_ambient_temperature():
+        if self.get_ambient_temperature() is not None:
             data['ambient_temp_C'] = self.ambient_temp.value
         self.get_values()
-        if self.internal_voltage:
+        if self.internal_voltage is not None:
             data['internal_voltage_V'] = self.internal_voltage.value
-        if self.ldr_resistance:
+        if self.ldr_resistance is not None:
             data['ldr_resistance_Ohm'] = self.ldr_resistance.value
-        if self.rain_sensor_temp:
+        if self.rain_sensor_temp is not None:
             data['rain_sensor_temp_C'] = f'{self.rain_sensor_temp.value:.02f}'
-        if self.get_rain_frequency():
+        if self.get_rain_frequency() is not None:
             data['rain_frequency'] = self.rain_frequency
-        if self.get_PWM():
+        if self.get_PWM() is not None:
             data['pwm_value'] = self.PWM
-        if self.get_errors():
+        if self.get_errors() is not None:
             data['errors'] = self.errors
-        if self.get_wind_speed():
+        if self.get_wind_speed() is not None:
             data['wind_speed_KPH'] = self.wind_speed.value
 
         # Make Safety Decision

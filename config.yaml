@@ -22,7 +22,7 @@ weather:
   plot:
     amb_temp_limits:
       - -5
-      - 35
+      - 40
     cloudiness_limits:
       - -45
       - 5
@@ -36,7 +36,7 @@ weather:
       - -5
       - 105
 location:
-  name: Maunaloa Observatory
+  name: Mauna Loa Observatory
   elevation: 3400.0  # meters
   latitude: 19.54  # degrees
   longitude: -155.58  # degrees

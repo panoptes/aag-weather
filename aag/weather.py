@@ -688,7 +688,7 @@ class AAGCloudSensor(object):
         if 'ambient_temp_C' not in last_entry and last_entry['ambient_temp_C'] is not None:
             logger.warning('No Ambient Temperature measurement. Can not determine PWM value.')
         elif 'rain_sensor_temp_C' not in last_entry and last_entry[
-            'rain_sensor_temp_C'] is not None:
+                'rain_sensor_temp_C'] is not None:
             logger.warning('No Rain Sensor Temperature measurement. Can not determine PWM value.')
         else:
             # Decide whether to use the impulse heating mechanism
@@ -715,7 +715,7 @@ class AAGCloudSensor(object):
             # Set PWM Based on Impulse Method or Normal Method
             if self.impulse_heating:
                 target_temp = float(last_entry['ambient_temp_C']) + \
-                              float(self.heater_cfg['impulse_temp'])
+                    float(self.heater_cfg['impulse_temp'])
                 if last_entry['rain_sensor_temp_C'] < target_temp:
                     logger.debug('  Rain sensor temp < target.  Setting heater to 100 %.')
                     self.set_pwm(100)
@@ -732,7 +732,7 @@ class AAGCloudSensor(object):
                     frac = (last_entry['ambient_temp_C'] - self.heater_cfg['low_temp']) / \
                            (self.heater_cfg['high_temp'] - self.heater_cfg['low_temp'])
                     delta_t = self.heater_cfg['low_delta'] + frac * \
-                              (self.heater_cfg['high_delta'] - self.heater_cfg['low_delta'])
+                        (self.heater_cfg['high_delta'] - self.heater_cfg['low_delta'])
                 target_temp = last_entry['ambient_temp_C'] + delta_t
                 new_pwm = int(self.heater_pid.recalculate(float(last_entry['rain_sensor_temp_C']),
                                                           new_set_point=target_temp))
@@ -748,9 +748,11 @@ class AAGCloudSensor(object):
 
                 self.set_pwm(new_pwm)
 
-    def make_safety_decision(self, current_values):
+    def make_safety_decision(self, current_values, ignore=False):
         """
         Method makes decision whether conditions are safe or unsafe.
+
+        ignore: list of saftey params to ignore. Can be 'rain', 'wind', 'gust' or 'cloud'
         """
         logger.debug('Making safety decision')
         logger.debug(f'Found {len(self.weather_entries)} weather entries '
@@ -768,7 +770,14 @@ class AAGCloudSensor(object):
 
         rain = self._get_rain_safety(current_values)
 
-        safe = cloud[1] & wind[1] & gust[1] & rain[1]
+        saftey_params = {'cloud': cloud[1], 'wind': wind[1], 'gust': gust[1], 'rain': rain[1]}
+
+        for weather_to_ignore in ignore:
+            if weather_to_ignore in saftey_params:
+                del saftey_params[weather_to_ignore]
+
+        safe = all(saftey_params.values())
+
         logger.debug(f'Weather Safe: {safe}')
 
         return {'Safe': safe,

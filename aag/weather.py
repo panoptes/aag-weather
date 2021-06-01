@@ -772,11 +772,12 @@ class AAGCloudSensor(object):
 
         saftey_params = {'cloud': cloud[1], 'wind': wind[1], 'gust': gust[1], 'rain': rain[1]}
 
-        for weather_to_ignore in ignore:
-            if weather_to_ignore in saftey_params:
-                del saftey_params[weather_to_ignore]
-
-        safe = all(saftey_params.values())
+        if ignore:
+            for weather_to_ignore in ignore:
+                if weather_to_ignore in saftey_params:
+                    del saftey_params[weather_to_ignore]
+        else:
+            safe = all(saftey_params.values())
 
         logger.debug(f'Weather Safe: {safe}')
 

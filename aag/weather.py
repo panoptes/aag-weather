@@ -608,7 +608,10 @@ class AAGCloudSensor(object):
             data['wind_speed_KPH'] = self.wind_speed.value
 
         # Make Safety Decision
-        self.safe_dict = self.make_safety_decision(data)
+        if self.config.get('ignore') is not None:
+            self.safe_dict = self.make_safety_decision(data, self.config.get('ignore'))
+        else:
+            self.safe_dict = self.make_safety_decision(data)
 
         data['safe'] = self.safe_dict['Safe']
         data['sky_condition'] = self.safe_dict['Sky']

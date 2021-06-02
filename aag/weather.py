@@ -752,7 +752,7 @@ class AAGCloudSensor(object):
         """
         Method makes decision whether conditions are safe or unsafe.
 
-        ignore: list of saftey params to ignore. Can be 'rain', 'wind', 'gust' or 'cloud'
+        ignore: list of safety params to ignore. Can be 'rain', 'wind', 'gust' or 'cloud'. If None (default) nothing is ignored.
         """
         logger.debug('Making safety decision')
         logger.debug(f'Found {len(self.weather_entries)} weather entries '

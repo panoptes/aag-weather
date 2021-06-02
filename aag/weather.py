@@ -748,7 +748,7 @@ class AAGCloudSensor(object):
 
                 self.set_pwm(new_pwm)
 
-    def make_safety_decision(self, current_values, ignore=False):
+    def make_safety_decision(self, current_values, ignore=None):
         """
         Method makes decision whether conditions are safe or unsafe.
 

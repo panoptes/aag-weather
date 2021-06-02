@@ -10,6 +10,7 @@ weather:
     threshold_wet: 2200
     threshold_rainy: 1800
     safety_delay: 15
+    ignore_unsafe: None # can be a list, e.g. 'rain','cloud','gust','wind'
     heater:
       low_temp: 0
       low_delta: 6

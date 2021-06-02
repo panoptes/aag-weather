@@ -7,7 +7,7 @@ import numpy as np
 import astropy.units as u
 from loguru import logger
 from panoptes.utils.rs232 import SerialData
-
+from panoptes.utils.utils import listify
 from .PID import PID
 
 
@@ -608,7 +608,10 @@ class AAGCloudSensor(object):
             data['wind_speed_KPH'] = self.wind_speed.value
 
         # Make Safety Decision
-        self.safe_dict = self.make_safety_decision(data)
+        if self.config.get('ignore_unsafe') is not None:
+            self.safe_dict = self.make_safety_decision(data, self.config.get('ignore_unsafe'))
+        else:
+            self.safe_dict = self.make_safety_decision(data)
 
         data['safe'] = self.safe_dict['Safe']
         data['sky_condition'] = self.safe_dict['Sky']
@@ -688,7 +691,7 @@ class AAGCloudSensor(object):
         if 'ambient_temp_C' not in last_entry and last_entry['ambient_temp_C'] is not None:
             logger.warning('No Ambient Temperature measurement. Can not determine PWM value.')
         elif 'rain_sensor_temp_C' not in last_entry and last_entry[
-            'rain_sensor_temp_C'] is not None:
+                'rain_sensor_temp_C'] is not None:
             logger.warning('No Rain Sensor Temperature measurement. Can not determine PWM value.')
         else:
             # Decide whether to use the impulse heating mechanism
@@ -715,7 +718,7 @@ class AAGCloudSensor(object):
             # Set PWM Based on Impulse Method or Normal Method
             if self.impulse_heating:
                 target_temp = float(last_entry['ambient_temp_C']) + \
-                              float(self.heater_cfg['impulse_temp'])
+                    float(self.heater_cfg['impulse_temp'])
                 if last_entry['rain_sensor_temp_C'] < target_temp:
                     logger.debug('  Rain sensor temp < target.  Setting heater to 100 %.')
                     self.set_pwm(100)
@@ -732,7 +735,7 @@ class AAGCloudSensor(object):
                     frac = (last_entry['ambient_temp_C'] - self.heater_cfg['low_temp']) / \
                            (self.heater_cfg['high_temp'] - self.heater_cfg['low_temp'])
                     delta_t = self.heater_cfg['low_delta'] + frac * \
-                              (self.heater_cfg['high_delta'] - self.heater_cfg['low_delta'])
+                        (self.heater_cfg['high_delta'] - self.heater_cfg['low_delta'])
                 target_temp = last_entry['ambient_temp_C'] + delta_t
                 new_pwm = int(self.heater_pid.recalculate(float(last_entry['rain_sensor_temp_C']),
                                                           new_set_point=target_temp))
@@ -748,9 +751,11 @@ class AAGCloudSensor(object):
 
                 self.set_pwm(new_pwm)
 
-    def make_safety_decision(self, current_values):
+    def make_safety_decision(self, current_values, ignore=None):
         """
         Method makes decision whether conditions are safe or unsafe.
+
+        ignore: list of safety params to ignore. Can be 'rain', 'wind', 'gust' or 'cloud'. If None (default) nothing is ignored.
         """
         logger.debug('Making safety decision')
         logger.debug(f'Found {len(self.weather_entries)} weather entries '
@@ -768,7 +773,19 @@ class AAGCloudSensor(object):
 
         rain = self._get_rain_safety(current_values)
 
-        safe = cloud[1] & wind[1] & gust[1] & rain[1]
+        saftey_params = {'cloud': cloud[1], 'wind': wind[1], 'gust': gust[1], 'rain': rain[1]}
+
+        if ignore is not None:
+            for weather_to_ignore in listify(ignore):
+                ignored_value = safety_params.pop(weather_to_ignore)
+
+                # Warn if ignoring an unsafe value.
+                if ignored_value is False:
+                    logger.warning(f'Ignored unsafe value: {weather_to_ignore}={ignored_value}')
+
+        # Do final safety check.
+        safe = all(safety_params.values())
+
         logger.debug(f'Weather Safe: {safe}')
 
         return {'Safe': safe,

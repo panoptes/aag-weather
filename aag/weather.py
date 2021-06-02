@@ -7,7 +7,7 @@ import numpy as np
 import astropy.units as u
 from loguru import logger
 from panoptes.utils.rs232 import SerialData
-
+from panoptes.utils.utils import listify
 from .PID import PID
 
 
@@ -772,8 +772,6 @@ class AAGCloudSensor(object):
 
         saftey_params = {'cloud': cloud[1], 'wind': wind[1], 'gust': gust[1], 'rain': rain[1]}
 
-        from panoptes.utils.utils import listify  # at top of file
-        
         if ignore is not None:
             for weather_to_ignore in listify(ignore):
                 ignored_value = safety_params.pop(weather_to_ignore)
@@ -781,7 +779,7 @@ class AAGCloudSensor(object):
                 # Warn if ignoring an unsafe value.
                 if ignored_value is False:
                     logger.warning(f'Ignored unsafe value: {weather_to_ignore}={ignored_value}')
-                
+
         # Do final safety check.
         safe = all(safety_params.values())
 

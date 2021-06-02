@@ -772,12 +772,18 @@ class AAGCloudSensor(object):
 
         saftey_params = {'cloud': cloud[1], 'wind': wind[1], 'gust': gust[1], 'rain': rain[1]}
 
-        if ignore:
-            for weather_to_ignore in ignore:
-                if weather_to_ignore in saftey_params:
-                    del saftey_params[weather_to_ignore]
-        else:
-            safe = all(saftey_params.values())
+        from panoptes.utils.utils import listify  # at top of file
+        
+        if ignore is not None:
+            for weather_to_ignore in listify(ignore):
+                ignored_value = safety_params.pop(weather_to_ignore)
+
+                # Warn if ignoring an unsafe value.
+                if ignored_value is False:
+                    logger.warning(f'Ignored unsafe value: {weather_to_ignore}={ignored_value}')
+                
+        # Do final safety check.
+        safe = all(safety_params.values())
 
         logger.debug(f'Weather Safe: {safe}')
 

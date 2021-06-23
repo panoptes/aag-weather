@@ -773,7 +773,7 @@ class AAGCloudSensor(object):
 
         rain = self._get_rain_safety(current_values)
 
-        saftey_params = {'cloud': cloud[1], 'wind': wind[1], 'gust': gust[1], 'rain': rain[1]}
+        safety_params = {'cloud': cloud[1], 'wind': wind[1], 'gust': gust[1], 'rain': rain[1]}
 
         if ignore is not None:
             for weather_to_ignore in listify(ignore):

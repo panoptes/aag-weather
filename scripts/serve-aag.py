@@ -2,6 +2,9 @@ import os
 from fastapi import FastAPI
 from pathlib import Path
 
+from panoptes.utils.serializers import from_yaml
+
+
 app = FastAPI()
 weather_file = Path(os.getenv('WEATHER_JSON_FILE', 'current_weather.json'))
 

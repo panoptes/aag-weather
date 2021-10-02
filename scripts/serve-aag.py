@@ -13,6 +13,6 @@ def current_reading():
     """Gets the current weather reading."""
     reading = dict()
     with weather_file.open('r') as f:
-        reading = from_yaml(f.read())['data']
+        reading = from_yaml(f.read())
 
     return reading

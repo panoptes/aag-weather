@@ -4,7 +4,7 @@ import pandas as pd
 from pandas.io.json import json_normalize
 from loguru import logger
 
-from aag.plotter import WeatherPlotter
+from src.aag.plotter import WeatherPlotter
 
 
 def label_pos(lim, pos=0.85):

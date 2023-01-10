@@ -5,7 +5,7 @@ import time
 from panoptes.utils.database.file import PanFileDB
 from panoptes.utils.serializers import from_yaml
 
-from aag.weather import AAGCloudSensor
+from src.aag.weather import AAGCloudSensor
 
 
 def main(config=None,

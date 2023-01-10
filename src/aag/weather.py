@@ -8,7 +8,7 @@ import astropy.units as u
 from loguru import logger
 from panoptes.utils.rs232 import SerialData
 from panoptes.utils.utils import listify
-from .PID import PID
+from src.aag.PID import PID
 
 
 def movingaverage(interval, window_size):

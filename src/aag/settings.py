@@ -32,6 +32,10 @@ class WeatherSettings(BaseSettings):
     thresholds = Thresholds()
     heater = Heater()
 
+    class Config:
+        env_prefix = 'AAG_'
+        env_file = 'config.env'
+
 
 class WeatherPlotter(BaseModel):
     ambient_temp: tuple[int, int] = (-5, 45)  # celsius

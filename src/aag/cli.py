@@ -20,7 +20,7 @@ def main(
         global readings_table
 
         if len(readings_table) == 0:
-            readings_table = Table(reading)
+            readings_table = Table([reading])
         else:
             readings_table.add_row(reading)
 

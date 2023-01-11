@@ -1,4 +1,5 @@
 import re
+from collections.abc import Callable
 from contextlib import suppress
 from logging import getLogger
 import time
@@ -37,7 +38,7 @@ class CloudSensor(object):
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
-    def capture(self, verbose: bool = False, callback: callable | None = None):
+    def capture(self, verbose: bool = False, callback: Callable | None = None):
         """Captures readings continuously."""
         try:
             while True:

@@ -117,7 +117,7 @@ class CloudSensor(object):
     def get_wind_speed(self) -> float | None:
         """ Gets the wind speed. """
         if self.has_anemometer:
-            return self.query(WeatherCommand.GET_WINDSPEED) / 100. * u.km / u.hour
+            return self.query(WeatherCommand.GET_WINDSPEED) * (u.km / u.hour)
         else:
             return None
 

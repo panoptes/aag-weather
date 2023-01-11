@@ -33,7 +33,7 @@ def main(
     if output_filename is not None:
         global readings_table
         readings_table.write(output_filename)
-        typer.echo(f'Readings data saved to {output_filename}')
+        typer.echo(f'Data saved to {output_filename}')
 
 
 if __name__ == "__main__":

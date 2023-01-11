@@ -38,13 +38,11 @@ class CloudSensor(object):
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
-    def capture(self, verbose: bool = False, callback: Callable | None = None):
+    def capture(self, callback: Callable | None = None):
         """Captures readings continuously."""
         try:
             while True:
                 reading = self.get_reading()
-                if verbose:
-                    print(f'{reading!r}')
 
                 if callback is not None:
                     callback(reading)

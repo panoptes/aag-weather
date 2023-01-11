@@ -50,4 +50,4 @@ class Location(BaseModel):
     elevation: float = 100.0  # meters
     latitude: float = 19.54  # degrees
     longitude: float = -155.58  # degrees
-    timezone: st = 'US/Hawaii'
+    timezone: str = 'US/Hawaii'

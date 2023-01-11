@@ -31,3 +31,19 @@ class WeatherSettings(BaseSettings):
     ignore_unsafe: bool | None = None  # None, otherwise can be a list, e.g. 'rain','cloud','gust','wind'
     thresholds = Thresholds()
     heater = Heater()
+
+
+class WeatherPlotter(BaseModel):
+    ambient_temp: tuple[int, int] = (-5, 45)  # celsius
+    cloudiness: tuple[int, int] = (-45, 5)
+    wind: tuple[int, int] = (0, 50)  # kph
+    rain: tuple[int, int] = (700, 7000)
+    pwm: tuple[int, int] = (-5, 105)  # percent
+
+
+class Location(BaseModel):
+    name: str = 'AAG CloudWatcher'
+    elevation: float = 100.0  # meters
+    latitude: float = 19.54  # degrees
+    longitude: float = -155.58  # degrees
+    timezone: st = 'US/Hawaii'

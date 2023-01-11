@@ -1,11 +1,11 @@
 import re
+import time
+import serial
 from collections.abc import Callable
+from collections import deque
 from contextlib import suppress
 from logging import getLogger
-import time
-from collections import deque
 
-import serial
 from astropy import units as u
 
 from aag.commands import WeatherCommand, WeatherResponseCodes

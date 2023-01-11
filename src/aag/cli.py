@@ -10,7 +10,7 @@ app = typer.Typer()
 
 @app.command(name='capture')
 def main(
-        output_filename: Path = typer.Argument(None, help='Output filename'),
+        output_filename: Path = typer.Option(None, help='Output filename'),
         verbose: bool = typer.Option(False, help='Verbose output'),
 ):
     sensor = CloudSensor()

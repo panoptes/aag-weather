@@ -1,4 +1,6 @@
 import typer
+import json
+from astropy.utils.misc import JsonCustomEncoder
 from aag.weather import CloudSensor
 
 app = typer.Typer()
@@ -9,7 +11,10 @@ def main():
     sensor = CloudSensor()
     typer.echo(f'Sensor: {sensor}')
 
-    sensor.capture(callback=typer.echo)
+    def callback(reading):
+        typer.echo(json.dumps(reading, cls=JsonCustomEncoder))
+
+    sensor.capture(callback=callback)
 
 
 if __name__ == "__main__":

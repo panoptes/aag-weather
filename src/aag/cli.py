@@ -5,8 +5,8 @@ app = typer.Typer()
 
 
 @app.command(name='capture')
-def main(name: str):
-    sensor = CloudSensor(name)
+def main():
+    sensor = CloudSensor()
     typer.echo(f'Sensor: {sensor}')
 
     sensor.capture(callback=typer.echo)

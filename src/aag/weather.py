@@ -112,10 +112,20 @@ class CloudSensor(object):
         """Gets the latest PWM reading."""
         return self.query(WeatherCommand.GET_PWM, parse_type=int) / 1023 * 100 * u.percent
 
+    def set_pwm(self, percent: float):
+        """Sets the PWM value."""
+        percent = min(100, max(0, int(percent)))
+        percent = percent * 1023 / 100
+        self.write(WeatherCommand.SET_PWM, cmd_params=f'{percent:04d}')
+        pass
+
     def get_wind_speed(self) -> float | None:
         """ Gets the wind speed. """
         if self.has_anemometer:
-            return self.query(WeatherCommand.GET_WINDSPEED) * (u.km / u.hour)
+            ws = self.query(WeatherCommand.GET_WINDSPEED) * (u.km / u.hour)
+            ws *= 0.84
+            ws += 3 * u.km / u.hour
+            return ws
         else:
             return None
 
@@ -140,13 +150,13 @@ class CloudSensor(object):
 
         return response
 
-    def write(self, cmd: WeatherCommand, cmd_delim: str = '!'):
+    def write(self, cmd: WeatherCommand, cmd_params: str = '', cmd_delim: str = '!'):
         """Writes a command to the sensor.
 
         Appends the command delimiter and carriage return to the command and
         writes it to the sensor.
         """
-        full_cmd = f'{cmd.value}{cmd_delim}'
+        full_cmd = f'{cmd.value}{cmd_params}{cmd_delim}'
         logger.debug(f'Writing command {full_cmd!r}')
         return self._sensor.write(full_cmd.encode())
 

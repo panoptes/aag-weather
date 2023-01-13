@@ -40,6 +40,7 @@ class WeatherResponseCodes(StrEnum):
     GET_FIRMWARE = 'V '
     GET_SERIAL_NUMBER = 'K'
     GET_PWM = 'Q '
+    SET_PWM = 'P'
     GET_RAIN_FREQUENCY = 'R '
     SWITCH_OPEN = 'X '
     SWITCH_CLOSED = 'Y '

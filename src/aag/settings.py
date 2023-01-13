@@ -13,7 +13,7 @@ class Thresholds(BaseModel):
 
 
 class Heater(BaseModel):
-    min_power: float = 10
+    min_power: float = 0
     low_temp: float = 0
     low_delta: float = 6
     high_temp: float = 20

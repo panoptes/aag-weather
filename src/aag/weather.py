@@ -38,6 +38,9 @@ class CloudSensor(object):
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
+        # Set the PWM to the minimum to start.
+        self.set_pwm(self.config.heater.min_power)
+
     def capture(self, callback: Callable | None = None):
         """Captures readings continuously."""
         try:

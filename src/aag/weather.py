@@ -115,9 +115,8 @@ class CloudSensor(object):
     def set_pwm(self, percent: float):
         """Sets the PWM value."""
         percent = min(100, max(0, int(percent)))
-        percent = percent * 1023 / 100
+        percent = int(percent * 1023 / 100)
         self.write(WeatherCommand.SET_PWM, cmd_params=f'{percent:04d}')
-        pass
 
     def get_wind_speed(self) -> float | None:
         """ Gets the wind speed. """

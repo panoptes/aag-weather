@@ -116,7 +116,7 @@ class CloudSensor(object):
         """Sets the PWM value."""
         percent = min(100, max(0, int(percent)))
         percent = int(percent * 1023 / 100)
-        self.write(WeatherCommand.SET_PWM, cmd_params=f'{percent:04d}')
+        return self.query(WeatherCommand.SET_PWM, cmd_params=f'{percent:04d}')
 
     def get_wind_speed(self) -> float | None:
         """ Gets the wind speed. """
@@ -130,14 +130,14 @@ class CloudSensor(object):
 
     def query(self, cmd: WeatherCommand,
               return_codes: bool = False,
-              parse_type: type = float) -> list | str | float | int | bool:
+              parse_type: type = float, *args, **kwargs) -> list | str | float | int | bool:
         """ Queries the sensor for the current values.
 
          This combines the `write` and `read` methods into a single method and
          checks that the response is valid.
          """
-        self.write(cmd)
-        response = self.read()
+        self.write(cmd, *args, **kwargs)
+        response = self.read(*args, **kwargs)
 
         if len(response) == 1:
             response = response[0]
@@ -149,7 +149,8 @@ class CloudSensor(object):
 
         return response
 
-    def write(self, cmd: WeatherCommand, cmd_params: str = '', cmd_delim: str = '!'):
+    def write(self, cmd: WeatherCommand, cmd_params: str = '', cmd_delim: str = '!', *args,
+              **kwargs):
         """Writes a command to the sensor.
 
         Appends the command delimiter and carriage return to the command and
@@ -159,7 +160,7 @@ class CloudSensor(object):
         logger.debug(f'Writing command {full_cmd!r}')
         return self._sensor.write(full_cmd.encode())
 
-    def read(self, return_raw: bool = False) -> list:
+    def read(self, return_raw: bool = False, *args, **kwargs) -> list:
         """Reads a response from the sensor.
 
         The CloudWatcher always returns blocks of 15 characters, with each command

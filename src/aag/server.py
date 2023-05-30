@@ -22,6 +22,6 @@ def get_reading():
     return sensor.get_reading()
 
 
-@app.get('/')
+@app.get('/weather')
 def main():
     return sensor.readings

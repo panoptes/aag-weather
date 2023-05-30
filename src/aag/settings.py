@@ -33,7 +33,7 @@ class Heater(BaseModel):
 class WeatherSettings(BaseSettings):
     serial_port: str = '/dev/ttyUSB0'
     safety_delay: float = 15  # minutes
-    capture_delay: float = 5  # seconds
+    capture_delay: float = 30  # seconds
     num_readings: int = 10
     ignore_unsafe: bool | None = None  # None, otherwise can be a list, e.g. 'rain','cloud','gust','wind'
     thresholds = Thresholds()
@@ -42,6 +42,7 @@ class WeatherSettings(BaseSettings):
     class Config:
         env_prefix = 'AAG_'
         env_file = 'config.env'
+        env_nested_delimiter = '__'
 
 
 class WeatherPlotter(BaseModel):

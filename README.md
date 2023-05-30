@@ -11,8 +11,9 @@ There are two main components to this project:
 2. [FastAPI](https://fastapi.tiangolo.com/lo/) web service.
 
 The `aag-weather` command line tool is used to read the weather data from the
-CloudWatcher and store it in a file. The web service is used to serve the
-weather data to a web browser as json, which can be read by various tools. If
+CloudWatcher and store it in a file. 
+
+The web service is used to serve the weather data to a web browser as json, which can be read by various tools. If
 using [POCS](https://github.com/panoptes/POCS) you can use the `pocs sensor monitor`
 command to read the weather data continuously.
 

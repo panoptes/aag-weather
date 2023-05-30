@@ -1,153 +1,134 @@
-aag-weather
-===========
+# aag-weather
 
-- [aag-weather](#aag-weather)
-  - [Configuration](#configuration)
-  - [Running via docker](#running-via-docker)
-    - [Getting the Docker image](#getting-the-docker-image)
-    - [Running a Docker container](#running-a-docker-container)
-  - [Runnig via scripts](#runnig-via-scripts)
-    - [Install](#install)
-    - [Running](#running)
-      - [Read AAG](#read-aag)
-      - [Serve AAG data](#serve-aag-data)
-        - [Configure Flask Server](#configure-flask-server)
-        - [Running Flask Server](#running-flask-server)
+> Weather service for the Lunatico AAG CloudWatcher.
 
+This is a simple weather service for the Lunatico AAG CloudWatcher. It is
+intended to be used with the [aag-cloudwatcher](https://www.lunatico.es/ourproducts/aag-cloud-watcher.html).
 
-A small script that is capable of reading the [Lunatico AAG Cloud Watcher](https://www.lunatico.es/ourproducts/aag-cloud-watcher.html) weather station data, including the anemometer.
+There are two main components to this project:
 
-This can either be run via [Docker](#docker-service) or as [scripts](#manual-service) on your host.
+1. The `aag-weather` command line tool.
+2. [FastAPI](https://fastapi.tiangolo.com/lo/) web service.
 
-## Configuration
+The `aag-weather` command line tool is used to read the weather data from the
+CloudWatcher and store it in a file. The web service is used to serve the
+weather data to a web browser as json, which can be read by various tools. If
+using [POCS](https://github.com/panoptes/POCS) you can use the `pocs sensor monitor`
+command to read the weather data continuously.
 
-The agg-weather service needs a configuration file to help it connect to the device,
-interpret the results (i.e. safety threshold limits), and to help with plotting.
+# Installation
 
-An example configuration is included in [`config.yaml`](config.yaml).
-
-At a very minimum the correct `serial_port` should be changed to match that of the AAG.  If using
-the `serve-aag.py` script (as opposed to the Docker image), then you can also pass the serial port on the command line.
-
-## Running via docker
-
-There is a docker image that can be used to run both the `aag-reader` (read from the AAG device)
-as well as the `aag-server` (minimal web server to view results).
-
-### Getting the Docker image
+Install with `pip`:
 
 ```bash
-docker pull gcr.io/panoptes-exp/aag-weather
+pip install panoptes-aag
 ```
 
-### Running a Docker container
-
-This repository contains a sample [`docker-compose`](https://docs.docker.com/compose/) file that will
-start two containers: `aag-weather-server` and `aag-weather-reader`.
-
-The `aag-weather-server` is responsible for communication with the AAG and therefore needs access to the serial device. Results are written to a simple sqlite3 database.
-
-The `aag-weather-reader` starts a small flask web server that returns the most recent results as JSON.
-
-1. Create a directory to hold the config and data: `mkdir my-aag-weather`
-2. Create a `config.yaml` as per [instructions](#configuration) and place in the `my-aag-weather` directory.
-3. Create (or copy) the `docker-compose.yaml` file into the `my-aag-weather` directory.
-4. Start the service with `docker-compose up`.
-5. Access the latest reading at the url `http://localhost:5000/`
-
-## Runnig via scripts
-
-### Install
-
-Clone the repository and then run either:
-
+Or from a local repository:
 
 ```bash
-python setup.py install
-```
-
-or
-
-```bash
-pip install -r requirements.txt
+git clone https://github.com/panoptes/aag-weather
+cd aag-weather
 pip install -e .
 ```
 
-### Running
+# Usage
 
-#### Read AAG
+You can use either the `aag-weather` command line tool or the web service to
+read the weather data.
 
-The `scripts/read-aag.py` file is responsible for reading the serial data from the AAG. It requires
-a config file in order to properly read from the AAG, with default values provided by `config.yaml`.
-If you require any values to change (for instance the `serial_address` or the threshold values), then
-you can copy the config file to another location and specify it on the command line.
+## Web service
 
-```bash
-➜ scripts/read-aag.py --help
-usage: read-aag.py [-h] --config-file CONFIG_FILE [--store-result]
-                   [--db-file DB_FILE] [--db-table DB_TABLE]
-                   [--serial-address SERIAL_ADDRESS] [--verbose]
+### Starting
 
-Read an AAG CloudWatcher
-
-optional arguments:
-  -h, --help            show this help message and exit
-  --config-file CONFIG_FILE
-                        Config file that contains the AAG params.
-  --store-result        If data entries should be saved to db, default False.
-  --db-file DB_FILE     Name of sqlite3 db file to use.
-  --db-table DB_TABLE   Name of db table to use.
-  --serial-address SERIAL_ADDRESS
-                        USB serial address to use. If None, value from config
-                        will be used.
-  --verbose             Output data on the command line.
-```
-
-#### Serve AAG data
-
-> :warning: **NOTE:** There has been no attempt made to make this secure and Flask runs the development
-server out of the box. This is suitable for testing and a minimal network implementation but should
-never be used on an unsecure network (aren't they all?) and never in a "production" environment.
-Use at your own risk.
-
-A minimal flask server is included with the repository that can be used to serve the latest results
-over the network.
-
-The flask server provides two endpoints:
-
-* `/latest.json`: This will serve the latest weather records returned as JSON. By default will only
-return the most recent record, but `num_records=5` can be used to return more records.
-* `/download-db`: Will send the `weather.db` as a file attachment for downloading.
-
-##### Configure Flask Server
-
-The Flask server uses [`python-dotenv`](https://flask.palletsprojects.com/en/1.1.x/cli/#environment-variables-from-dotenv) for configuration. To configure, create a `.env` file
-in the main directory and add the **absolute path** to the database file. If a relative path
-is given then the `latest.json` endpoint will still work but the database will not be available
-for download.
-
-Example `.env` file:
+The web service can be run with the `aag-weather` command line tool:
 
 ```bash
-FLASK_DEBUG=1
-DB_FILE=/home/pi/aag-weather/weather.db
+aag-weather serve
 ```
 
-If you would like to make the server available at your public IP address, add the host to
-the `.env` file, e.g.:
+The `host` and `port` can be specified with the `--host` and `--port` options.
 
-> :warning: :dragon: :warning: Use at your own risk.
+### Reading
 
-```
-FLASK_RUN_HOST=0.0.0.0
-FLASK_RUN_PORT=8989
-```
+The web service will serve the weather data as json. The data can be accessed
+by going to the `/weather` endpoint. For example, if the web service is
+running on `localhost` on port `8080` then the weather data can be accessed at
+`http://localhost:8000/weather`.
 
-##### Running Flask Server
-
-The Flask server uses the Flask command line interface. To start, run the following from the root of
-the repository:
+The [httpie](https://httpie.io/) is installed with this package and can be
+used to read the weather data from the command line:
 
 ```bash
-flask run
+http :8080/weather
 ```
+
+## Command line
+
+### Starting
+
+The `aag-weather` command line tool can be used to read the weather data from
+the CloudWatcher and store it in a file. The `aag-weather` command line tool
+can be run with:
+
+```bash
+aag-weather capture
+```
+
+See `aag-weather capture --help` for more options.
+
+### Reading
+
+When the `aag-weather` command line tool is running it will write the weather
+data to a file. The default file is `weather.csv` in the current directory. You
+can change the format by specifying a different output file when capturing, for
+example:
+
+```bash
+aag-weather capture --output-file weather.json
+```
+
+# Configuration
+
+The `aag-weather` command line tool and web service
+are [pydantic settings](https://pydantic-docs.helpmanual.io/usage/settings/) and can be configured with
+environment variables or a `config.env` file in the directory from which the command is run.
+
+The environment variables are prepended with `AAG_`. The main configuration options are:
+
+| Environment variable | Default        | Description                                                      |
+|----------------------|----------------|------------------------------------------------------------------|
+| `AAG_SERIAL_PORT`    | `/dev/ttyUSB0` | The serial port to use to connect to the CloudWatcher.           |
+| `AAG_SAFETY_DELAY`   | `15`           | Minutes after an unsafe reading before the system is safe again. |
+| `AAG_CAPTURE_DELAY`  | `30`           | Seconds between readings.                                        |
+| `AAG_NUM_READINGS`   | `10`           | Number of readings to use for averaging.                         |
+| `AAG_IGNORE_UNSAFE`  | `None`         | None, otherwise can be a list, e.g. 'rain','cloud','gust','wind' |
+
+Additionally, you can set the `thresholds` options as well as options to control the `heater`. These options
+are "nested" and so use a double underscore (e.g. `__`) to separate the levels.
+
+| Environment variable           | Default | Description                                                 |
+|--------------------------------|---------|-------------------------------------------------------------|
+| `AAG_THRESHOLDS__CLOUDY`       | `-25`   | Difference between sky and ambient temperatures in Celsius. |
+| `AAG_THRESHOLDS__VERY_CLOUDY`  | `-15`   | Difference between sky and ambient temperatures in Celsius. |
+| `AAG_THRESHOLDS__WINDY`        | `50`    | Wind speed in km/h.                                         |
+| `AAG_THRESHOLDS__VERY_WINDY`   | `75`    | Wind speed in km/h.                                         |
+| `AAG_THRESHOLDS__GUSTY`        | `100`   | Wind gust speed in km/h.                                    |
+| `AAG_THRESHOLDS__VERY_GUSTY`   | `125`   | Wind gust speed in km/h.                                    |
+| `AAG_THRESHOLDS__WET`          | `2200`  | Wetness in Ohms.                                            |
+| `AAG_THRESHOLDS__RAINY`        | `1800`  | Rain in Ohms.                                               |
+| `AAG_HEATER__MIN_POWER`        | `0`     | Minimum power to use for the heater.                        |
+| `AAG_HEATER__LOW_TEMP`         | `0`     | Temperature in Celsius.                                     |
+| `AAG_HEATER__LOW_DELTA`        | `6`     | Difference between sky and ambient temperatures in Celsius. |
+| `AAG_HEATER__HIGH_TEMP`        | `20`    | Temperature in Celsius.                                     |
+| `AAG_HEATER__HIGH_DELTA`       | `4`     | Difference between sky and ambient temperatures in Celsius. |
+| `AAG_HEATER__IMPULSE_TEMP`     | `10`    | Temperature in Celsius.                                     |
+| `AAG_HEATER__IMPULSE_DURATION` | `60`    | Duration in seconds.                                        |
+| `AAG_HEATER__IMPULSE_CYCLE`    | `600`   | Cycle in seconds.                                           |
+
+# Misc
+
+This project has been set up using PyScaffold 4.4.1. For details and usage
+information on PyScaffold see https://pyscaffold.org/.
+
+[![Project generated with PyScaffold](https://img.shields.io/badge/-PyScaffold-005CA0?logo=pyscaffold)](https://pyscaffold.org/)

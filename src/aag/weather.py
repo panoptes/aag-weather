@@ -32,8 +32,15 @@ class CloudSensor(object):
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
+        self._is_connected = False
+
         if connect:
-            self.connect()
+            self._is_connected = self.connect()
+
+    @property
+    def is_connected(self):
+        """ Is the sensor connected?"""
+        return self._is_connected
 
     def connect(self) -> bool:
         """ Connect to the sensor """
@@ -48,9 +55,10 @@ class CloudSensor(object):
 
             # Set the PWM to the minimum to start.
             self.set_pwm(self.config.heater.min_power)
-            return True
+
+            self._is_connected = True
         except Exception as e:
-            return False
+            self._is_connected = False
 
     def capture(self, callback: Callable | None = None, units: WhichUnits = 'none'):
         """Captures readings continuously."""

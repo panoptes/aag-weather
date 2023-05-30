@@ -17,7 +17,7 @@ logger = getLogger(__name__)
 
 
 class CloudSensor(object):
-    def __init__(self):
+    def __init__(self, connect: bool = True, **kwargs):
         """ A class to read the cloud sensor """
         self.config = WeatherSettings()
 
@@ -29,19 +29,28 @@ class CloudSensor(object):
 
         self.handshake_block = r'\x11\s{12}0'
 
-        # Initialize and get static values.
-        self.name = self.query(WeatherCommand.GET_INTERNAL_NAME)
-        self.firmware = self.query(WeatherCommand.GET_FIRMWARE)
-        self.serial_number = self.query(WeatherCommand.GET_SERIAL_NUMBER, parse_type=str)[0:4]
-
-        # Check if we have wind speed.
-        self.has_anemometer = self.query(WeatherCommand.CAN_GET_WINDSPEED, parse_type=bool)
-
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
-        # Set the PWM to the minimum to start.
-        self.set_pwm(self.config.heater.min_power)
+        if connect:
+            self.connect()
+
+    def connect(self) -> bool:
+        """ Connect to the sensor """
+        try:
+            # Initialize and get static values.
+            self.name = self.query(WeatherCommand.GET_INTERNAL_NAME)
+            self.firmware = self.query(WeatherCommand.GET_FIRMWARE)
+            self.serial_number = self.query(WeatherCommand.GET_SERIAL_NUMBER, parse_type=str)[0:4]
+
+            # Check if we have wind speed.
+            self.has_anemometer = self.query(WeatherCommand.CAN_GET_WINDSPEED, parse_type=bool)
+
+            # Set the PWM to the minimum to start.
+            self.set_pwm(self.config.heater.min_power)
+            return True
+        except Exception as e:
+            return False
 
     def capture(self, callback: Callable | None = None, units: WhichUnits = 'none'):
         """Captures readings continuously."""

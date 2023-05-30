@@ -1,5 +1,7 @@
 import re
 import time
+from datetime import datetime
+
 import serial
 from collections.abc import Callable
 from collections import deque
@@ -9,7 +11,7 @@ from logging import getLogger
 from astropy import units as u
 
 from aag.commands import WeatherCommand, WeatherResponseCodes
-from aag.settings import WeatherSettings
+from aag.settings import WeatherSettings, WhichUnits
 
 logger = getLogger(__name__)
 
@@ -41,11 +43,11 @@ class CloudSensor(object):
         # Set the PWM to the minimum to start.
         self.set_pwm(self.config.heater.min_power)
 
-    def capture(self, callback: Callable | None = None):
+    def capture(self, callback: Callable | None = None, units: WhichUnits = 'none'):
         """Captures readings continuously."""
         try:
             while True:
-                reading = self.get_reading()
+                reading = self.get_reading(units=units)
 
                 if callback is not None:
                     callback(reading)
@@ -54,20 +56,33 @@ class CloudSensor(object):
         except KeyboardInterrupt:
             pass
 
-    def get_reading(self, enqueue: bool = True) -> dict:
+    def get_reading(self, enqueue: bool = True, units: WhichUnits = 'none') -> dict:
         """ Get a single reading of all values.
 
         If enqueue is True (default), the reading is added to the queue.
+        If with_units is True, the reading is returned with units.
         """
         readings = {
-            'timestamp': time.time(),
-            'ambient_temperature': self.get_ambient_temperature(),
-            'sky_temperature': self.get_sky_temperature(),
+            'timestamp': datetime.now().isoformat(),
+            'ambient_temp': self.get_ambient_temperature(),
+            'sky_temp': self.get_sky_temperature(),
             'wind_speed': self.get_wind_speed(),
             'rain_frequency': self.get_rain_frequency(),
             'pwm': self.get_pwm(),
             **{f'error_{i}': err for i, err in enumerate(self.get_errors())}
         }
+
+        if units != 'none':
+            # First make them metric units.
+            readings['ambient_temp'] *= u.Celsius
+            readings['sky_temp'] *= u.Celsius
+            readings['wind_speed'] *= u.m / u.s
+            readings['pwm'] *= u.percent
+            # Then convert if needed.
+            if units == 'imperial':
+                readings['ambient_temp'] = readings['ambient_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                readings['sky_temp'] = readings['sky_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                readings['wind_speed'] = readings['wind_speed'].to(u.imperial.mile / u.hour)
 
         if enqueue:
             self.readings.append(readings)
@@ -85,11 +100,11 @@ class CloudSensor(object):
 
     def get_sky_temperature(self) -> float:
         """Gets the latest IR sky temperature reading."""
-        return self.query(WeatherCommand.GET_SKY_TEMP) / 100. * u.Celsius
+        return self.query(WeatherCommand.GET_SKY_TEMP) / 100.
 
     def get_ambient_temperature(self) -> float:
         """Gets the latest ambient temperature reading."""
-        return self.query(WeatherCommand.GET_SENSOR_TEMP) / 100. * u.Celsius
+        return self.query(WeatherCommand.GET_SENSOR_TEMP) / 100.
 
     def get_rain_sensor_values(self):
         """Gets the latest sensor values."""
@@ -97,11 +112,11 @@ class CloudSensor(object):
 
         for i, response in enumerate(responses.copy()):
             if response.startswith(WeatherResponseCodes.GET_VALUES_AMBIENT):
-                responses[i] = response[2:] / 100. * u.Celsius
+                responses[i] = response[2:] / 100.
             elif response.startswith(WeatherResponseCodes.GET_VALUES_LDR_VOLTAGE):
                 responses[i] = response[2:]
             elif response.startswith(WeatherResponseCodes.GET_VALUES_SENSOR_TEMP):
-                responses[i] = float(response[2:]) / 100. * u.Celsius
+                responses[i] = float(response[2:]) / 100.
             elif response.startswith(WeatherResponseCodes.GET_VALUES_ZENER_VOLTAGE):
                 responses[i] = response[2:]
 
@@ -113,7 +128,7 @@ class CloudSensor(object):
 
     def get_pwm(self):
         """Gets the latest PWM reading."""
-        return self.query(WeatherCommand.GET_PWM, parse_type=int) / 1023 * 100 * u.percent
+        return self.query(WeatherCommand.GET_PWM, parse_type=int) / 1023 * 100
 
     def set_pwm(self, percent: float):
         """Sets the PWM value."""
@@ -124,9 +139,10 @@ class CloudSensor(object):
     def get_wind_speed(self) -> float | None:
         """ Gets the wind speed. """
         if self.has_anemometer:
-            ws = self.query(WeatherCommand.GET_WINDSPEED) * (u.km / u.hour)
+            ws = self.query(WeatherCommand.GET_WINDSPEED)
             ws *= 0.84
-            ws += 3 * u.km / u.hour
+            # The manual says to add 3 km/h to the reading but that seems off.
+            # ws += 3 * u.km / u.hour
             return ws
         else:
             return None
@@ -194,8 +210,7 @@ class CloudSensor(object):
         return response
 
     def __str__(self):
-        return f'CloudSensor({self.name}, FW={self.firmware}, ' \
-               f'SN={self.serial_number}, port={self.config.serial_port})'
+        return f'CloudSensor({self.name}, FW={self.firmware}, SN={self.serial_number}, port={self.config.serial_port})'
 
     def __del__(self):
         logger.debug('Closing serial connection')

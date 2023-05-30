@@ -1,4 +1,11 @@
 from pydantic import BaseSettings, BaseModel
+from enum import StrEnum
+
+
+class WhichUnits(StrEnum):
+    metric = 'metric'
+    imperial = 'imperial'
+    none = 'none'
 
 
 class Thresholds(BaseModel):

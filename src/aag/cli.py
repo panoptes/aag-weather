@@ -1,7 +1,10 @@
+import subprocess
 from pathlib import Path
 
 import typer
 from astropy.table import Table
+from rich import print
+
 from aag.weather import CloudSensor
 
 app = typer.Typer()
@@ -9,12 +12,13 @@ readings_table = Table()
 
 
 @app.command(name='capture')
-def main(
-        output_filename: Path = typer.Option(None, help='Output filename'),
-        verbose: bool = typer.Option(False, help='Verbose output'),
+def capture(
+        output: Path = typer.Option('aag-readings.ecsv', help='Output filename, defaults to an astropy ECSV file.'),
+        verbose: bool = typer.Option(False, help='Verbose output.'),
 ):
+    """Captures readings continuously."""
     sensor = CloudSensor()
-    typer.echo(f'Sensor: {sensor}')
+    print(f'Sensor: {sensor}')
 
     def callback(reading):
         global readings_table
@@ -25,15 +29,25 @@ def main(
             readings_table.add_row(reading)
 
         if verbose:
-            typer.echo(reading)
+            print(reading)
+
+        if output is not None:
+            readings_table.write(output, overwrite=True, format='ascii.ecsv', delimiter=',')
 
     # Blocking
     sensor.capture(callback=callback)
 
-    if output_filename is not None:
-        global readings_table
-        readings_table.write(output_filename)
-        typer.echo(f'Data saved to {output_filename}')
+    if output is not None:
+        print(f'Data saved to {output}')
+
+
+@app.command(name='serve')
+def serve(
+        port: int = typer.Option(8080, help='Port to serve on.'),
+        host: str = typer.Option('localhost', help='Host to serve on.'),
+):
+    """Start the FastAPI server."""
+    subprocess.run(['uvicorn', 'aag.server:app', f'--host={host}', f'--port={port}'])
 
 
 if __name__ == "__main__":

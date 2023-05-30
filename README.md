@@ -1,4 +1,6 @@
-# aag-weather
+# PANOPTES AAG weather reader
+
+[![codecov](https://codecov.io/github/panoptes/aag-weather/branch/main/graph/badge.svg?token=wwoAn40DVB)](https://codecov.io/github/panoptes/aag-weather)
 
 > Weather service for the Lunatico AAG CloudWatcher.
 
@@ -51,6 +53,19 @@ aag-weather serve
 The `host` and `port` can be specified with the `--host` and `--port` options.
 
 ### Reading
+
+#### POCS
+
+If you are using [POCS](https://github.com/panoptes/POCS) you can use the remote sensor utilities:
+
+```bash
+pocs sensor monitor weather --endpoint http://localhost:8080
+```
+
+> :information_source: If you installed POCS via the install script then this is all managed for you.
+
+
+#### Command line
 
 The web service will serve the weather data as json. The data can be accessed
 by going to the `/weather` endpoint. For example, if the web service is

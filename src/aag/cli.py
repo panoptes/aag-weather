@@ -13,7 +13,7 @@ readings_table = Table()
 
 @app.command(name='capture')
 def capture(
-        output: Path = typer.Option('aag-readings.ecsv', help='Output filename, defaults to an astropy ECSV file.'),
+        output: Path = typer.Option('weather.csv', help='Output filename, defaults to an astropy ECSV file.'),
         verbose: bool = typer.Option(False, help='Verbose output.'),
 ):
     """Captures readings continuously."""

@@ -25,42 +25,46 @@ Or
 Configuration
 *************
 
-The agg-weather service needs a configuration file to help it connect to the device, interpret the results (i.e. safety threshold limits), and to help with plotting.
+The settings are handled via the `pydantic` `Settings`_ module. These values can be modified with an
+environment variable, or by creating a ``config.env`` file in the root of the project. The environment
+variable names should be prepended with ``AAG_``.
 
-An example configuration is included in `config.yaml <config.yaml>`_.
+The following values are available:
 
-At a very minimum the correct ``serial_port`` should be changed to match that of the AAG.
+
+
+An example of setting the environment variables at the command line is:
+
+.. code-block:: bash
+
+    AAG_SERIAL_PORT=/dev/ttyUSB1 AAG_OUTPUT_FILENAME=/tmp/aag-weather.csv aag-weather capture
+
+
+
 
 Running
 *******
 
-Read AAG
-========
+Reading values
+==============
 
-The ``scripts/read-aag.py`` file is responsible for reading the serial data from the AAG. It requires
-a config file in order to properly read from the AAG, with default values provided by ``config.yaml``.
-If you require any values to change (for instance the ``serial_address`` or the threshold values), then
-you can copy the config file to another location and specify it on the command line.
+Installing the module will create the ``aag-weather`` console script, which can be used
+for reading values from the AAG.
 
 .. code-block:: bash
 
-    ➜ scripts/read-aag.py --help
-    usage: read-aag.py [-h] --config-file CONFIG_FILE [--store-result]
-                       [--db-file DB_FILE] [--db-table DB_TABLE]
-                       [--serial-address SERIAL_ADDRESS] [--verbose]
+    $ aag-weather --help
+    Usage: aag-weather [OPTIONS]
 
-    Read an AAG CloudWatcher
+    Options:
+      --output-filename PATH    Output filename
+      --verbose / --no-verbose  Verbose output  [default: no-verbose]
+      --help                    Show this message and exit.
 
-    optional arguments:
-      -h, --help            show this help message and exit
-      --config-file CONFIG_FILE
-                            Config file that contains the AAG params.
-      --store-result        If data entries should be saved to db, default False.
-      --db-file DB_FILE     Name of sqlite3 db file to use.
-      --db-table DB_TABLE   Name of db table to use.
-      --serial-address SERIAL_ADDRESS
-                            USB serial address to use. If None, value from config
-                            will be used.
-      --verbose             Output data on the command line.
+
+If you require any values to change (for instance the ``serial_address`` or the threshold values), then
+you can copy the config file to another location and specify it on the command line.
+
 
 .. _LUNATICO: https://www.lunatico.es/ourproducts/aag-cloud-watcher.html.
+.. _SETTINGS: https://docs.pydantic.dev/latest/usage/settings/

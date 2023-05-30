@@ -6,24 +6,32 @@ import serial
 from collections.abc import Callable
 from collections import deque
 from contextlib import suppress
-from logging import getLogger
 
 from astropy import units as u
+from rich import print
 
 from aag.commands import WeatherCommand, WeatherResponseCodes
 from aag.settings import WeatherSettings, WhichUnits
 
-logger = getLogger(__name__)
-
 
 class CloudSensor(object):
     def __init__(self, connect: bool = True, **kwargs):
-        """ A class to read the cloud sensor """
-        self.config = WeatherSettings()
+        """ A class to read the cloud sensor.
 
-        self._sensor: serial.Serial = serial.serial_for_url(self.config.serial_port,
-                                                            baudrate=9600,
-                                                            timeout=1)
+        Args:
+            connect: Whether to connect to the sensor on init.
+            **kwargs: Keyword arguments for the WeatherSettings class.
+        """
+        self.config = WeatherSettings(**kwargs)
+
+        try:
+            self._sensor: serial.Serial = serial.serial_for_url(self.config.serial_port,
+                                                                baudrate=9600,
+                                                                timeout=1)
+        except serial.serialutil.SerialException as e:
+            print(f'[red]Unable to connect to weather sensor. Check the port. {e}')
+            raise e
+
         self._sensor.reset_input_buffer()
         self._sensor.reset_output_buffer()
 
@@ -38,12 +46,12 @@ class CloudSensor(object):
             self._is_connected = self.connect()
 
     @property
-    def is_connected(self):
+    def is_connected(self) -> bool:
         """ Is the sensor connected?"""
         return self._is_connected
 
     def connect(self) -> bool:
-        """ Connect to the sensor """
+        """ Connect to the sensor. """
         try:
             # Initialize and get static values.
             self.name = self.query(WeatherCommand.GET_INTERNAL_NAME)
@@ -60,8 +68,14 @@ class CloudSensor(object):
         except Exception as e:
             self._is_connected = False
 
-    def capture(self, callback: Callable | None = None, units: WhichUnits = 'none'):
-        """Captures readings continuously."""
+        return self._is_connected
+
+    def capture(self, callback: Callable | None = None, units: WhichUnits = 'none') -> None:
+        """Captures readings continuously.
+
+        Args:
+            callback: A function to call with each reading.
+        """
         try:
             while True:
                 reading = self.get_reading(units=units)
@@ -76,8 +90,12 @@ class CloudSensor(object):
     def get_reading(self, enqueue: bool = True, units: WhichUnits = 'none') -> dict:
         """ Get a single reading of all values.
 
-        If enqueue is True (default), the reading is added to the queue.
-        If with_units is True, the reading is returned with units.
+        Args:
+            enqueue: Whether to add the reading to the queue, default True.
+            units: The units to return the reading in, default 'none'.
+
+        Returns:
+            A dictionary of readings.
         """
         readings = {
             'timestamp': datetime.now().isoformat(),
@@ -106,8 +124,12 @@ class CloudSensor(object):
 
         return readings
 
-    def get_errors(self):
-        """Gets the number of internal errors"""
+    def get_errors(self) -> list[int]:
+        """Gets the number of internal errors
+
+        Returns:
+            A list of integer error codes.
+        """
         responses = self.query(WeatherCommand.GET_INTERNAL_ERRORS, return_codes=True)
 
         for i, response in enumerate(responses.copy()):
@@ -116,15 +138,27 @@ class CloudSensor(object):
         return responses
 
     def get_sky_temperature(self) -> float:
-        """Gets the latest IR sky temperature reading."""
+        """Gets the latest IR sky temperature reading.
+
+        Returns:
+            The sky temperature in Celsius.
+        """
         return self.query(WeatherCommand.GET_SKY_TEMP) / 100.
 
     def get_ambient_temperature(self) -> float:
-        """Gets the latest ambient temperature reading."""
+        """Gets the latest ambient temperature reading.
+
+        Returns:
+            The ambient temperature in Celsius.
+        """
         return self.query(WeatherCommand.GET_SENSOR_TEMP) / 100.
 
-    def get_rain_sensor_values(self):
-        """Gets the latest sensor values."""
+    def get_rain_sensor_values(self) -> list[float]:
+        """Gets the latest sensor values.
+
+        Returns:
+            A list of rain sensor values.
+        """
         responses = self.query(WeatherCommand.GET_VALUES, return_codes=True)
 
         for i, response in enumerate(responses.copy()):
@@ -140,21 +174,37 @@ class CloudSensor(object):
         return responses
 
     def get_rain_frequency(self) -> int:
-        """Gets the rain frequency."""
+        """Gets the rain frequency.
+
+        Returns:
+            The rain frequency in Hz (?).
+        """
         return self.query(WeatherCommand.GET_RAIN_FREQUENCY, parse_type=int)
 
-    def get_pwm(self):
-        """Gets the latest PWM reading."""
+    def get_pwm(self) -> float:
+        """Gets the latest PWM reading.
+
+        Returns:
+            The PWM value as a percentage.
+        """
         return self.query(WeatherCommand.GET_PWM, parse_type=int) / 1023 * 100
 
-    def set_pwm(self, percent: float):
-        """Sets the PWM value."""
+    def set_pwm(self, percent: float) -> bool:
+        """Sets the PWM value.
+
+        Returns:
+            True if successful, False otherwise.
+        """
         percent = min(100, max(0, int(percent)))
         percent = int(percent * 1023 / 100)
         return self.query(WeatherCommand.SET_PWM, cmd_params=f'{percent:04d}')
 
     def get_wind_speed(self) -> float | None:
-        """ Gets the wind speed. """
+        """ Gets the wind speed.
+
+        Returns:
+            The wind speed in km/h.
+        """
         if self.has_anemometer:
             ws = self.query(WeatherCommand.GET_WINDSPEED)
             ws *= 0.84
@@ -171,6 +221,16 @@ class CloudSensor(object):
 
          This combines the `write` and `read` methods into a single method and
          checks that the response is valid.
+
+        Args:
+            cmd: The command to send to the sensor.
+            return_codes: Whether to return the response codes, default False.
+            parse_type: The type to parse the response as, default float.
+            *args: Additional arguments to pass to `write` and `read`.
+            **kwargs: Additional keyword arguments to pass to `write` and `read`.
+
+        Returns:
+            The response from the sensor.
          """
         self.write(cmd, *args, **kwargs)
         response = self.read(*args, **kwargs)
@@ -185,18 +245,25 @@ class CloudSensor(object):
 
         return response
 
-    def write(self, cmd: WeatherCommand, cmd_params: str = '', cmd_delim: str = '!', *args,
-              **kwargs):
+    def write(self, cmd: WeatherCommand, cmd_params: str = '', cmd_delim: str = '!', *args, **kwargs) -> int:
         """Writes a command to the sensor.
 
         Appends the command delimiter and carriage return to the command and
         writes it to the sensor.
+
+        Args:
+            cmd: The command to send to the sensor.
+            cmd_params: Any parameters to send with the command.
+            cmd_delim: The command delimiter, default '!'.
+
+        Returns:
+            The number of bytes written.
         """
         full_cmd = f'{cmd.value}{cmd_params}{cmd_delim}'
-        logger.debug(f'Writing command {full_cmd!r}')
+        print(f'Writing command {full_cmd!r}')
         return self._sensor.write(full_cmd.encode())
 
-    def read(self, return_raw: bool = False, *args, **kwargs) -> list:
+    def read(self, return_raw: bool = False, verbose: bool = False, *args, **kwargs) -> list:
         """Reads a response from the sensor.
 
         The CloudWatcher always returns blocks of 15 characters, with each command
@@ -209,15 +276,22 @@ class CloudSensor(object):
         If `return_raw` is False (default) then the blocks are parsed into a
         dictionary with the keys being the response code and the values being the
         data. Otherwise, the raw response is returned, including the handshake.
+
+        Args:
+            return_raw: Whether to return the raw response, default False.
+            verbose: Whether to print the raw response, default False.
+
+        Returns:
+            The response from the sensor.
         """
         response = self._sensor.read_until(self.handshake_block).decode()
-        logger.debug(f'Read response {response!r}')
+        if verbose:
+            print(f'Raw response: {response!r}')
 
         if not return_raw:
             # Split into a list of blocks, with each item containing both the
             # response code and the data.
             response = re.findall(r"!(.{14})", response)
-            logger.debug(f'{response=!r}')
 
             # Check that the handshake block is valid.
             handshake_block = response.pop()
@@ -230,5 +304,5 @@ class CloudSensor(object):
         return f'CloudSensor({self.name}, FW={self.firmware}, SN={self.serial_number}, port={self.config.serial_port})'
 
     def __del__(self):
-        logger.debug('Closing serial connection')
+        print('[red]Closing serial connection')
         self._sensor.close()

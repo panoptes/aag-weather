@@ -40,6 +40,11 @@ class CloudSensor(object):
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
+        self.name = 'CloudWatcher'
+        self.firmware = None
+        self.serial_number = None
+        self.has_anemometer = False
+
         self._is_connected = False
 
         if connect:

@@ -156,7 +156,6 @@ class CloudSensor(object):
         Returns:
             The reading with the safety values added.
         """
-        # TODO check the safety thresholds and add is_safe.
         reading['cloud_condition'] = 'unknown'
         temp_diff = reading['ambient_temp'] - reading['sky_temp']
         if temp_diff >= self.thresholds.very_cloudy:

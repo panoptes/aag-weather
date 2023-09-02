@@ -70,8 +70,15 @@ class CloudSensor(object):
         """Is the sensor safe?"""
         return self.status['is_safe']
 
-    def connect(self) -> bool:
-        """ Connect to the sensor. """
+    def connect(self, raise_exceptions: bool = True) -> bool:
+        """ Connect to the sensor.
+
+        Args:
+            raise_exceptions: Whether to raise exceptions, default True.
+
+        Returns:
+            True if connected, False otherwise.
+        """
         try:
             # Initialize and get static values.
             self.name = self.query(WeatherCommand.GET_INTERNAL_NAME)
@@ -86,6 +93,9 @@ class CloudSensor(object):
 
             self._is_connected = True
         except Exception as e:
+            print(f'[red]Unable to connect to weather sensor. Check the port. {e}')
+            if raise_exceptions:
+                raise e
             self._is_connected = False
 
         return self._is_connected

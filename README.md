@@ -70,7 +70,7 @@ pocs sensor monitor weather --endpoint http://localhost:8080
 The web service will serve the weather data as json. The data can be accessed
 by going to the `/weather` endpoint. For example, if the web service is
 running on `localhost` on port `8080` then the weather data can be accessed at
-`http://localhost:8000/weather`.
+`http://localhost:8080/weather`.
 
 The [httpie](https://httpie.io/) is installed with this package and can be
 used to read the weather data from the command line:
@@ -84,7 +84,7 @@ http :8080/weather
 ### Starting
 
 The `aag-weather` command line tool can be used to read the weather data from
-the CloudWatcher and store it in a file. The `aag-weather` command line tool
+the CloudWatcher and store it in a csv file. The `aag-weather` command line tool
 can be run with:
 
 ```bash

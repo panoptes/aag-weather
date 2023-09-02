@@ -9,7 +9,7 @@ def test_create_sensor():
     sensor = CloudSensor(connect=False)
     assert isinstance(sensor, CloudSensor)
     assert not sensor.is_connected
-    assert sensor.connect() is False
+    assert sensor.connect(raise_exceptions=False) is False
 
 
 def test_bad_port():
@@ -20,12 +20,23 @@ def test_bad_port():
         CloudSensor(connect=False)
 
 
+def test_connect_loop():
+    with pytest.raises(Exception):
+        CloudSensor(connect=True, serial_port='loop://')
+
+    sensor = CloudSensor(connect=False, serial_port='loop://')
+    is_connected = sensor.connect(raise_exceptions=False)
+    assert isinstance(sensor, CloudSensor)
+    assert is_connected is False
+    assert sensor.is_connected is False
+
+
 def test_get_safe_reading():
     os.environ['AAG_SERIAL_PORT'] = 'loop://'
     sensor = CloudSensor(connect=False)
     assert isinstance(sensor, CloudSensor)
     assert not sensor.is_connected
-    assert sensor.connect() is False
+    assert sensor.connect(raise_exceptions=False) is False
 
     # Make a fake reading entry.
     reading = {

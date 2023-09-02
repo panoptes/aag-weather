@@ -16,7 +16,7 @@ def init_sensor():
 
 
 @app.on_event('startup')
-@repeat_every(seconds=5)
+@repeat_every(seconds=5, wait_first=True)
 def get_reading():
     """ Get a single reading of all values."""
     return sensor.get_reading()

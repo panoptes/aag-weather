@@ -11,7 +11,7 @@ from astropy import units as u
 from rich import print
 
 from aag.commands import WeatherCommand, WeatherResponseCodes
-from aag.settings import WeatherSettings, WhichUnits
+from aag.settings import WeatherSettings, WhichUnits, Thresholds
 
 
 class CloudSensor(object):
@@ -40,12 +40,12 @@ class CloudSensor(object):
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
-        self.name = 'CloudWatcher'
-        self.firmware = None
-        self.serial_number = None
-        self.has_anemometer = False
+        self.name: str = 'CloudWatcher'
+        self.firmware: str | None = None
+        self.serial_number: str | None = None
+        self.has_anemometer: bool = False
 
-        self._is_connected = False
+        self._is_connected: bool = False
 
         if connect:
             self._is_connected = self.connect()
@@ -54,6 +54,21 @@ class CloudSensor(object):
     def is_connected(self) -> bool:
         """ Is the sensor connected?"""
         return self._is_connected
+
+    @property
+    def thresholds(self) -> Thresholds:
+        """Thresholds for the safety checks."""
+        return self.config.thresholds
+
+    @property
+    def status(self) -> dict:
+        """Returns the most recent reading and safety value."""
+        return self.readings[-1]
+
+    @property
+    def is_safe(self) -> bool:
+        """Is the sensor safe?"""
+        return self.status['is_safe']
 
     def connect(self) -> bool:
         """ Connect to the sensor. """
@@ -92,17 +107,17 @@ class CloudSensor(object):
         except KeyboardInterrupt:
             pass
 
-    def get_reading(self, enqueue: bool = True, units: WhichUnits = 'none') -> dict:
+    def get_reading(self, units: WhichUnits = 'none') -> dict:
         """ Get a single reading of all values.
 
         Args:
-            enqueue: Whether to add the reading to the queue, default True.
-            units: The units to return the reading in, default 'none'.
+            units: The astropy units to return the reading in, default 'none',
+                can be 'metric' or 'imperial'.
 
         Returns:
             A dictionary of readings.
         """
-        readings = {
+        reading = {
             'timestamp': datetime.now().isoformat(),
             'ambient_temp': self.get_ambient_temperature(),
             'sky_temp': self.get_sky_temperature(),
@@ -112,22 +127,71 @@ class CloudSensor(object):
             **{f'error_{i}': err for i, err in enumerate(self.get_errors())}
         }
 
+        # Add the safety values.
+        reading = self.get_safe_reading(reading)
+
+        # Add astropy units if requested.
         if units != 'none':
             # First make them metric units.
-            readings['ambient_temp'] *= u.Celsius
-            readings['sky_temp'] *= u.Celsius
-            readings['wind_speed'] *= u.m / u.s
-            readings['pwm'] *= u.percent
+            reading['ambient_temp'] *= u.Celsius
+            reading['sky_temp'] *= u.Celsius
+            reading['wind_speed'] *= u.m / u.s
+            reading['pwm'] *= u.percent
             # Then convert if needed.
             if units == 'imperial':
-                readings['ambient_temp'] = readings['ambient_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                readings['sky_temp'] = readings['sky_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                readings['wind_speed'] = readings['wind_speed'].to(u.imperial.mile / u.hour)
+                reading['ambient_temp'] = reading['ambient_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                reading['sky_temp'] = reading['sky_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                reading['wind_speed'] = reading['wind_speed'].to(u.imperial.mile / u.hour)
 
-        if enqueue:
-            self.readings.append(readings)
+        self.readings.append(reading)
 
-        return readings
+        return reading
+
+    def get_safe_reading(self, reading: dict) -> dict:
+        """ Checks the reading against the thresholds.
+
+        Args:
+            reading: The reading to check.
+
+        Returns:
+            The reading with the safety values added.
+        """
+        # TODO check the safety thresholds and add is_safe.
+        reading['cloud_condition'] = 'unknown'
+        temp_diff = reading['ambient_temp'] - reading['sky_temp']
+        if temp_diff >= self.thresholds.very_cloudy:
+            reading['cloud_condition'] = 'very cloudy'
+        elif temp_diff >= self.thresholds.cloudy:
+            reading['cloud_condition'] = 'cloudy'
+        elif temp_diff < self.thresholds.cloudy:
+            reading['cloud_condition'] = 'clear'
+
+        reading['wind_condition'] = 'unknown'
+        if reading['wind_speed'] is not None:
+            if reading['wind_speed'] >= self.thresholds.very_gusty:
+                reading['wind_condition'] = 'very gusty'
+            elif reading['wind_speed'] >= self.thresholds.gusty:
+                reading['wind_condition'] = 'gusty'
+            elif reading['wind_speed'] >= self.thresholds.windy:
+                reading['wind_condition'] = 'windy'
+            elif reading['wind_speed'] < self.thresholds.windy:
+                reading['wind_condition'] = 'calm'
+
+        reading['rain_condition'] = 'unknown'
+        if reading['rain_frequency'] >= self.thresholds.rainy:
+            reading['rain_condition'] = 'rainy'
+        elif reading['rain_frequency'] >= self.thresholds.wet:
+            reading['rain_condition'] = 'wet'
+        elif reading['rain_frequency'] < self.thresholds.wet:
+            reading['rain_condition'] = 'dry'
+
+        reading['cloud_safe'] = True if reading['cloud_condition'] == 'clear' else False
+        reading['wind_safe'] = True if reading['wind_condition'] == 'calm' else False
+        reading['rain_safe'] = True if reading['rain_condition'] == 'dry' else False
+
+        reading['is_safe'] = True if reading['cloud_safe'] and reading['wind_safe'] and reading['rain_safe'] else False
+
+        return reading
 
     def get_errors(self) -> list[int]:
         """Gets the number of internal errors

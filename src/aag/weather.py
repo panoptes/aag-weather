@@ -345,7 +345,6 @@ class CloudSensor(object):
             The number of bytes written.
         """
         full_cmd = f'{cmd.value}{cmd_params}{cmd_delim}'
-        print(f'Writing command {full_cmd!r}')
         return self._sensor.write(full_cmd.encode())
 
     def read(self, return_raw: bool = False, verbose: bool = False, *args, **kwargs) -> list:

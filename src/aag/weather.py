@@ -27,13 +27,16 @@ class CloudSensor(object):
         try:
             self._sensor: serial.Serial = serial.serial_for_url(self.config.serial_port,
                                                                 baudrate=9600,
-                                                                timeout=1)
+                                                                timeout=1,
+                                                                do_not_open=True
+                                                                )
+            if connect:
+                self._sensor.open()
+                self._sensor.reset_input_buffer()
+                self._sensor.reset_output_buffer()
         except serial.serialutil.SerialException as e:
             print(f'[red]Unable to connect to weather sensor. Check the port. {e}')
             raise e
-
-        self._sensor.reset_input_buffer()
-        self._sensor.reset_output_buffer()
 
         self.handshake_block = r'\x11\s{12}0'
 
@@ -80,6 +83,8 @@ class CloudSensor(object):
             True if connected, False otherwise.
         """
         try:
+            self._sensor.is_open or self._sensor.open()
+
             # Initialize and get static values.
             self.name = self.query(WeatherCommand.GET_INTERNAL_NAME)
             self.firmware = self.query(WeatherCommand.GET_FIRMWARE)

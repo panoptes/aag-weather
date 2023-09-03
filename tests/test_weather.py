@@ -19,6 +19,9 @@ def test_bad_port():
     with pytest.raises(Exception):
         CloudSensor(connect=False)
 
+    # Should raise an exception
+    with pytest.raises(Exception):
+        CloudSensor(connect=True)
 
 def test_connect_loop():
     with pytest.raises(Exception):

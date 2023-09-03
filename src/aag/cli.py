@@ -34,11 +34,14 @@ def capture(
         if output is not None:
             readings_table.write(output, overwrite=True, format='ascii.ecsv', delimiter=',')
 
-    # Blocking
-    sensor.capture(callback=callback)
-
-    if output is not None:
-        print(f'Data saved to {output}')
+    try:
+        # Blocking.
+        sensor.capture(callback=callback)
+    except KeyboardInterrupt:
+        print('Stopping capture.')
+    finally:
+        if output is not None:
+            print(f'Data saved to {output}')
 
 
 @app.command(name='serve')

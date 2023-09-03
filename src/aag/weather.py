@@ -117,24 +117,29 @@ class CloudSensor(object):
         except KeyboardInterrupt:
             pass
 
-    def get_reading(self, units: WhichUnits = 'none') -> dict:
+    def get_reading(self, units: WhichUnits = 'none', avg_times: int = 5) -> dict:
         """ Get a single reading of all values.
 
         Args:
             units: The astropy units to return the reading in, default 'none',
                 can be 'metric' or 'imperial'.
+            avg_times: The number of times to average the readings, default 5.
 
         Returns:
             A dictionary of readings.
         """
+
+        def avg_times(fn, n=avg_times):
+            return sum(fn() for _ in range(n)) / n
+
         reading = {
             'timestamp': datetime.now().isoformat(),
-            'ambient_temp': self.get_ambient_temperature(),
-            'sky_temp': self.get_sky_temperature(),
-            'wind_speed': self.get_wind_speed(),
-            'rain_frequency': self.get_rain_frequency(),
+            'ambient_temp': avg_times(self.get_ambient_temperature),
+            'sky_temp': avg_times(self.get_sky_temperature),
+            'wind_speed': avg_times(self.get_wind_speed),
+            'rain_frequency': avg_times(self.get_rain_frequency),
             'pwm': self.get_pwm(),
-            **{f'error_{i}': err for i, err in enumerate(self.get_errors())}
+            **{f'error_{i:02d}': err for i, err in enumerate(self.get_errors())}
         }
 
         # Add the safety values.

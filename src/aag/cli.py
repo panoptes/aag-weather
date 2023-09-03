@@ -40,7 +40,7 @@ def capture(
             print(reading)
 
         if output is not None:
-            readings_table.write(output, overwrite=True, format=format_lookup.get(output.suffix), delimiter=',')
+            readings_table.write(output, overwrite=True, format=format_lookup.get(output.suffix))
 
     try:
         # Blocking.

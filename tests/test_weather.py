@@ -23,6 +23,7 @@ def test_bad_port():
     with pytest.raises(Exception):
         CloudSensor(connect=True)
 
+
 def test_connect_loop():
     with pytest.raises(Exception):
         CloudSensor(connect=True, serial_port='loop://')
@@ -41,31 +42,44 @@ def test_get_safe_reading():
     assert not sensor.is_connected
     assert sensor.connect(raise_exceptions=False) is False
 
-    # Make a fake reading entry.
+    # Make a fake reading that's safe.
     reading = {
-        'wind_speed': 10,
+        'wind_speed': 6,
         'ambient_temp': 20,
-        'sky_temp': 10,
+        'sky_temp': -20,
         'timestamp': '2021-01-01T00:00:00',
-        'rain_frequency': 2500,
+        'rain_frequency': 2600,
         'pwm': 0,
     }
+    sensor.readings.append(reading)
 
-    # Check safety.
+    # Check is safe.
     reading = sensor.get_safe_reading(reading=reading)
+    print(reading)
+    assert sensor.is_safe is True
+    assert reading['is_safe'] is True
+    assert reading['cloud_safe'] is True
+    assert reading['rain_safe'] is True
+    assert reading['wind_safe'] is True
+    assert reading['cloud_condition'] == 'clear'
+    assert reading['rain_condition'] == 'dry'
+    assert reading['wind_condition'] == 'calm'
+
+    # Make very cloudy
+    reading['ambient_temp'] = 20
+    reading['sky_temp'] = 10
+    reading = sensor.get_safe_reading(reading=reading)
+    assert sensor.is_safe is False
     assert reading['is_safe'] is False
     assert reading['cloud_safe'] is False
     assert reading['cloud_condition'] == 'very cloudy'
 
-    # Make safe
-    reading['ambient_temp'] = 20
-    reading['sky_temp'] = -20
-    print(reading)
+    # Make cloudy
+    reading['ambient_temp'] = 15
+    reading['sky_temp'] = -10
     reading = sensor.get_safe_reading(reading=reading)
-    print(reading)
-    assert reading['is_safe'] is True
-    assert reading['cloud_safe'] is True
-    assert reading['cloud_condition'] == 'clear'
+    assert sensor.is_safe is False
+    assert reading['cloud_condition'] == 'cloudy'
 
     # Make windy
     reading['wind_speed'] = 51
@@ -73,6 +87,7 @@ def test_get_safe_reading():
     assert reading['is_safe'] is False
     assert reading['wind_safe'] is False
     assert reading['wind_condition'] == 'windy'
+    assert sensor.is_safe is False
 
     reading['wind_speed'] = 76
     reading = sensor.get_safe_reading(reading=reading)

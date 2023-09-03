@@ -10,11 +10,19 @@ from aag.weather import CloudSensor
 app = typer.Typer()
 readings_table = Table()
 
+format_lookup = {
+    'csv': 'ascii.csv',
+    'ecsv': 'ascii.ecsv',
+    'json': 'pandas.json',
+}
+
 
 @app.command(name='capture')
 def capture(
-        output: Path = typer.Option('weather.csv', help='Output filename, defaults to an astropy ECSV file.'),
-        verbose: bool = typer.Option(False, help='Verbose output.'),
+        output: Path = typer.Option('weather.ecsv',
+                                    help='Output filename with format determined by extension, '
+                                         'defaults to an astropy ECSV file.'),
+        verbose: bool = typer.Option(False, help='Show the weather readings.'),
 ):
     """Captures readings continuously."""
     sensor = CloudSensor()
@@ -32,7 +40,7 @@ def capture(
             print(reading)
 
         if output is not None:
-            readings_table.write(output, overwrite=True, format='ascii.ecsv', delimiter=',')
+            readings_table.write(output, overwrite=True, format=format_lookup.get(output.suffix), delimiter=',')
 
     try:
         # Blocking.
@@ -41,7 +49,7 @@ def capture(
         print('Stopping capture.')
     finally:
         if output is not None:
-            print(f'Data saved to {output}')
+            print(f'\nData saved to [green]{output}[/green]')
 
 
 @app.command(name='serve')

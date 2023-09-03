@@ -34,6 +34,12 @@ def test_connect_loop():
     assert is_connected is False
     assert sensor.is_connected is False
 
+def test_str():
+    sensor = CloudSensor(connect=False, serial_port='loop://')
+    sensor.firmware = '5.12-fake'
+    sensor.serial_number = '1234567890'
+    assert str(sensor) == 'CloudSensor(CloudWatcher, FW=5.12-fake, SN=1234567890, port=loop://)'
+
 
 def test_get_safe_reading():
     os.environ['AAG_SERIAL_PORT'] = 'loop://'

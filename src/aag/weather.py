@@ -185,7 +185,7 @@ class CloudSensor(object):
             reading['cloud_condition'] = 'very cloudy'
         elif temp_diff >= self.thresholds.cloudy:
             reading['cloud_condition'] = 'cloudy'
-        elif temp_diff < self.thresholds.cloudy:
+        else:
             reading['cloud_condition'] = 'clear'
 
         reading['wind_condition'] = 'unknown'
@@ -198,7 +198,7 @@ class CloudSensor(object):
                 reading['wind_condition'] = 'very windy'
             elif reading['wind_speed'] >= self.thresholds.windy:
                 reading['wind_condition'] = 'windy'
-            elif reading['wind_speed'] < self.thresholds.windy:
+            else:
                 reading['wind_condition'] = 'calm'
 
         reading['rain_condition'] = 'unknown'
@@ -206,7 +206,7 @@ class CloudSensor(object):
             reading['rain_condition'] = 'rainy'
         elif reading['rain_frequency'] <= self.thresholds.wet:
             reading['rain_condition'] = 'wet'
-        elif reading['rain_frequency'] > self.thresholds.wet:
+        else:
             reading['rain_condition'] = 'dry'
 
         reading['cloud_safe'] = True if reading['cloud_condition'] == 'clear' else False

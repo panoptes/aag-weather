@@ -117,7 +117,7 @@ class CloudSensor(object):
         except KeyboardInterrupt:
             pass
 
-    def get_reading(self, units: WhichUnits = 'none', avg_times: int = 5) -> dict:
+    def get_reading(self, units: WhichUnits = 'none', avg_times: int = 3) -> dict:
         """ Get a single reading of all values.
 
         Args:

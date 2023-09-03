@@ -124,14 +124,14 @@ class CloudSensor(object):
             units: The astropy units to return the reading in, default 'none',
                 can be 'metric' or 'imperial'.
             get_errors: Whether to get the internal errors, default False.
-            avg_times: The number of times to average the readings, default 5.
+            avg_times: The number of times to average the readings, default 3.
 
         Returns:
             A dictionary of readings.
         """
 
         def avg_times(fn, n=avg_times):
-            return sum(fn() for _ in range(n)) / n
+            return round(sum(fn() for _ in range(n)) / n, 3)
 
         reading = {
             'timestamp': datetime.now().isoformat(),

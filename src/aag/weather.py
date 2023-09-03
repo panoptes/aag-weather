@@ -117,12 +117,13 @@ class CloudSensor(object):
         except KeyboardInterrupt:
             pass
 
-    def get_reading(self, units: WhichUnits = 'none', avg_times: int = 3) -> dict:
+    def get_reading(self, units: WhichUnits = 'none', get_errors: bool = False, avg_times: int = 3) -> dict:
         """ Get a single reading of all values.
 
         Args:
             units: The astropy units to return the reading in, default 'none',
                 can be 'metric' or 'imperial'.
+            get_errors: Whether to get the internal errors, default False.
             avg_times: The number of times to average the readings, default 5.
 
         Returns:
@@ -139,8 +140,10 @@ class CloudSensor(object):
             'wind_speed': avg_times(self.get_wind_speed),
             'rain_frequency': avg_times(self.get_rain_frequency),
             'pwm': self.get_pwm(),
-            **{f'error_{i:02d}': err for i, err in enumerate(self.get_errors())}
         }
+
+        if get_errors:
+            reading.update(**{f'error_{i:02d}': err for i, err in enumerate(self.get_errors())})
 
         # Add the safety values.
         reading = self.get_safe_reading(reading)

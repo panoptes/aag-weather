@@ -11,9 +11,9 @@ app = typer.Typer()
 readings_table = Table()
 
 format_lookup = {
-    'csv': 'ascii.csv',
-    'ecsv': 'ascii.ecsv',
-    'json': 'pandas.json',
+    '.csv': 'ascii.csv',
+    '.ecsv': 'ascii.ecsv',
+    '.json': 'pandas.json',
 }
 
 

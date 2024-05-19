@@ -37,8 +37,8 @@ class WeatherSettings(BaseSettings):
     capture_delay: float = 30  # seconds
     num_readings: int = 10
     ignore_unsafe: bool | None = None  # None, otherwise can be a list, e.g. 'rain','cloud','gust','wind'
-    thresholds = Thresholds()
-    heater = Heater()
+    thresholds: Thresholds = Thresholds()
+    heater: Heater = Heater()
 
     class Config:
         env_prefix = 'AAG_'

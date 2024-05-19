@@ -1,4 +1,5 @@
-from pydantic import BaseSettings, BaseModel
+from pydantic_settings import BaseSettings
+from pydantic import BaseModel
 from enum import StrEnum
 
 

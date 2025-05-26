@@ -25,7 +25,6 @@ class WeatherCommand(StrEnum):
     GET_HUMIDITY_HIGH       = 'hh'  # 高分辨率湿度原始值
     GET_PRESSURE            = 'p'   # 大气压原始值 (Pa×16)
     GET_PRESSURE_TEMP       = 'q'   # 气压传感器温度 (°C×100)
-    GET_SENSOR_TEMP         = 'T'   # RH 传感器温度原始值
     GET_SENSOR_TEMP_HIGH    = 'th'  # RH 传感器高分辨率原始值
 
 

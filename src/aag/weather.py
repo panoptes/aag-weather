@@ -144,6 +144,9 @@ class CloudSensor(object):
             'sky_temp': avg_times(self.get_sky_temperature),
             'wind_speed': avg_times(self.get_wind_speed),
             'rain_frequency': avg_times(self.get_rain_frequency),
+            'humidity':avg_times(self.get_humidity),
+            'pressure':avg_times(self.get_pressure),
+            'sensor_temp':avg_times(self.get_sensor_temp),
             'pwm': self.get_pwm(),
         }
 
@@ -158,12 +161,14 @@ class CloudSensor(object):
             # First make them metric units.
             reading['ambient_temp'] *= u.Celsius
             reading['sky_temp'] *= u.Celsius
+            reading['sensor_temp'] *= u.Celsius
             reading['wind_speed'] *= u.m / u.s
             reading['pwm'] *= u.percent
             # Then convert if needed.
             if units == 'imperial':
                 reading['ambient_temp'] = reading['ambient_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
                 reading['sky_temp'] = reading['sky_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                reading['sensor_temp'] = reading['sensor_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
                 reading['wind_speed'] = reading['wind_speed'].to(u.imperial.mile / u.hour)
 
         self.readings.append(reading)
@@ -245,7 +250,31 @@ class CloudSensor(object):
             The ambient temperature in Celsius.
         """
         return self.query(WeatherCommand.GET_SENSOR_TEMP) / 100.
+    
+    def get_humidity(self) -> float:
+        """Gets the latest ambient temperature reading.
 
+        Returns:
+            The ambient temperature in Celsius.
+        """
+        return self.query(WeatherCommand.GET_HUMIDITY)
+    
+    def get_pressure(self) -> float:
+        """Gets the latest ambient temperature reading.
+
+        Returns:
+            The ambient temperature in Celsius.
+        """
+        return self.query(WeatherCommand.GET_PRESSURE)
+    
+    def get_sensor_temp(self) -> float:
+        """Gets the latest ambient temperature reading.
+
+        Returns:
+            The ambient temperature in Celsius.
+        """
+        return self.query(WeatherCommand.GET_SENSOR_TEMP)
+    
     def get_rain_sensor_values(self) -> list[float]:
         """Gets the latest sensor values.
 

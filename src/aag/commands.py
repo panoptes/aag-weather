@@ -20,6 +20,14 @@ class WeatherCommand(StrEnum):
     CAN_GET_WINDSPEED = 'v'
     GET_WINDSPEED = 'V'
     RESET_RS232 = 'z'
+    
+    GET_HUMIDITY            = 'h'   # 相对湿度 %
+    GET_HUMIDITY_HIGH       = 'hh'  # 高分辨率湿度原始值
+    GET_PRESSURE            = 'p'   # 大气压原始值 (Pa×16)
+    GET_PRESSURE_TEMP       = 'q'   # 气压传感器温度 (°C×100)
+    GET_SENSOR_TEMP         = 'T'   # RH 传感器温度原始值
+    GET_SENSOR_TEMP_HIGH    = 'th'  # RH 传感器高分辨率原始值
+
 
 
 class WeatherResponseCodes(StrEnum):
@@ -44,4 +52,12 @@ class WeatherResponseCodes(StrEnum):
     GET_RAIN_FREQUENCY = 'R '
     SWITCH_OPEN = 'X '
     SWITCH_CLOSED = 'Y '
+
+    GET_VALUES_HUMIDITY     = 'h '
+    GET_VALUES_HUMIDITY_HIGH= 'hh'
+    GET_VALUES_PRESSURE     = 'p '
+    GET_VALUES_PRESSURE_TEMP= 'q '
+    GET_VALUES_SENSOR_TEMP  = 't '
+    GET_VALUES_SENSOR_TEMP_HIGH = 'th'
+
     HANDSHAKE = '\x11 '

@@ -1,0 +1,27 @@
+# %ECSV 1.0
+# ---
+# datatype:
+# - {name: timestamp, datatype: string}
+# - {name: ambient_temp, datatype: float64}
+# - {name: sky_temp, datatype: float64}
+# - {name: wind_speed, datatype: float64}
+# - {name: rain_frequency, datatype: float64}
+# - {name: humidity, datatype: float64}
+# - {name: pressure, datatype: float64}
+# - {name: sensor_temp, datatype: float64}
+# - {name: pwm, datatype: float64}
+# - {name: cloud_condition, datatype: string}
+# - {name: wind_condition, datatype: string}
+# - {name: rain_condition, datatype: string}
+# - {name: cloud_safe, datatype: bool}
+# - {name: wind_safe, datatype: bool}
+# - {name: rain_safe, datatype: bool}
+# - {name: is_safe, datatype: bool}
+# schema: astropy-2.0
+timestamp ambient_temp sky_temp wind_speed rain_frequency humidity pressure sensor_temp pwm cloud_condition wind_condition rain_condition cloud_safe wind_safe rain_safe is_safe
+2025-05-26T03:57:11.832461 28.73 28.697 0.0 3143.667 22750.667 16180.0 2873.667 0.0 "very cloudy" calm dry False True True False
+2025-05-26T03:58:09.190706 28.723 28.637 0.0 3143.333 22706.333 16180.333 2873.667 0.0 "very cloudy" calm dry False True True False
+2025-05-26T03:59:06.190039 28.697 28.563 0.0 3143.667 22693.0 16180.667 2867.667 0.0 "very cloudy" calm dry False True True False
+2025-05-26T04:00:03.180898 28.657 28.483 0.0 3143.667 22668.333 16180.333 2867.0 0.0 "very cloudy" calm dry False True True False
+2025-05-26T04:01:00.168711 28.663 28.59 0.0 3143.333 22642.0 16180.0 2865.0 0.0 "very cloudy" calm dry False True True False
+2025-05-26T04:01:57.174051 28.657 28.537 0.0 3143.333 22619.667 16180.0 2865.0 0.0 "very cloudy" calm dry False True True False

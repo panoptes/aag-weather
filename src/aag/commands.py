@@ -20,12 +20,12 @@ class WeatherCommand(StrEnum):
     CAN_GET_WINDSPEED = 'v'
     GET_WINDSPEED = 'V'
     RESET_RS232 = 'z'
-    
+
+    GET_RH_SENSOR_TEMP      = 't'   # RH 传感器温度，更加准确
     GET_HUMIDITY            = 'h'   # 相对湿度 %
     GET_HUMIDITY_HIGH       = 'hh'  # 高分辨率湿度原始值
     GET_PRESSURE            = 'p'   # 大气压原始值 (Pa×16)
     GET_PRESSURE_TEMP       = 'q'   # 气压传感器温度 (°C×100)
-    GET_SENSOR_TEMP_HIGH    = 'th'  # RH 传感器高分辨率原始值
 
 
 
@@ -37,6 +37,7 @@ class WeatherResponseCodes(StrEnum):
     GET_VALUES_LDR_VOLTAGE = '4 '
     GET_VALUES_SENSOR_TEMP = '5 '
     GET_VALUES_ZENER_VOLTAGE = '6 '
+    GET_VALUES_LIGHT_SENSOR = '8 '   #Rs323_Comms_v1.3.pdf
     CAN_GET_WINDSPEED = 'v '
     GET_WINDSPEED = 'w '
     GET_INTERNAL_ERROR_1 = 'E1'
@@ -52,11 +53,10 @@ class WeatherResponseCodes(StrEnum):
     SWITCH_OPEN = 'X '
     SWITCH_CLOSED = 'Y '
 
-    GET_VALUES_HUMIDITY     = 'h '
-    GET_VALUES_HUMIDITY_HIGH= 'hh'
-    GET_VALUES_PRESSURE     = 'p '
-    GET_VALUES_PRESSURE_TEMP= 'q '
-    GET_VALUES_SENSOR_TEMP  = 't '
-    GET_VALUES_SENSOR_TEMP_HIGH = 'th'
+    GET_HUMIDITY     = 'hh '
+    GET_HUMIDITY_HIGH= 'hh'
+    GET_PRESSURE     = 'p '
+    GET_PRESSURE_TEMP= 'q '
+    GET_RH_SENSOR_TEMP = 'th'
 
     HANDSHAKE = '\x11 '

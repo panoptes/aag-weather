@@ -30,15 +30,27 @@ class Heater(BaseModel):
     impulse_duration: float = 60
     impulse_cycle: int = 600
 
+class Location(BaseModel):
+    name: str = 'AAG CloudWatcher'
+    elevation: float = 100.0  # meters
+    latitude: float = 19.54  # degrees
+    longitude: float = -155.58  # degrees
+    timezone: str = 'US/Hawaii'
+
 
 class WeatherSettings(BaseSettings):
     serial_port: str = '/dev/ttyUSB0'
     safety_delay: float = 15  # minutes
     capture_delay: float = 30  # seconds
     num_readings: int = 10
+    sq_reference: float = 19.6 # SQReference
     ignore_unsafe: bool | None = None  # None, otherwise can be a list, e.g. 'rain','cloud','gust','wind'
+    verbose_logging: bool = False
+    solo_data_file_path: str = './'
+    have_heater: bool = False
     thresholds: Thresholds = Thresholds()
     heater: Heater = Heater()
+    location: Location = Location()
 
     class Config:
         env_prefix = 'AAG_'
@@ -54,9 +66,3 @@ class WeatherPlotter(BaseModel):
     pwm: tuple[int, int] = (-5, 105)  # percent
 
 
-class Location(BaseModel):
-    name: str = 'AAG CloudWatcher'
-    elevation: float = 100.0  # meters
-    latitude: float = 19.54  # degrees
-    longitude: float = -155.58  # degrees
-    timezone: str = 'US/Hawaii'

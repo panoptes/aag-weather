@@ -46,6 +46,7 @@ class WeatherSettings(BaseSettings):
     sq_reference: float = 19.6 # SQReference
     ignore_unsafe: bool | None = None  # None, otherwise can be a list, e.g. 'rain','cloud','gust','wind'
     verbose_logging: bool = False
+    serial_port_open_delay_seconds: float = 1 # seconds
     solo_data_file_path: str = './'
     have_heater: bool = False
     thresholds: Thresholds = Thresholds()

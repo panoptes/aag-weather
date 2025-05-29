@@ -2,6 +2,7 @@ import re
 import time
 from datetime import datetime,timezone
 import math # 导入 math 模块
+from enum import Enum # 导入 Enum
 
 import serial
 from collections.abc import Callable
@@ -14,6 +15,22 @@ from rich import print
 from aag.commands import WeatherCommand, WeatherResponseCodes
 from aag.settings import WeatherSettings, WhichUnits, Thresholds,Location
 
+# 新增：自定义异常
+class SensorCommunicationError(Exception):
+    """自定义异常，表示传感器通信失败。"""
+    pass
+
+# 新增：通信错误哨兵对象
+COMMUNICATION_ERROR_SENTINEL = object()
+
+# 新增：连接状态枚举
+class ConnectionStatus(Enum):
+    INITIALIZING = "INITIALIZING"
+    CONNECTED = "CONNECTED"
+    DISCONNECTED = "DISCONNECTED"
+    ERROR = "ERROR"
+    ATTEMPTING_RECONNECT = "ATTEMPTING_RECONNECT"
+
 
 class CloudSensor(object):
     def __init__(self, connect: bool = True, **kwargs):
@@ -23,8 +40,58 @@ class CloudSensor(object):
             connect: Whether to connect to the sensor on init.
             **kwargs: Keyword arguments for the WeatherSettings class.
         """
-        self.config = WeatherSettings(**kwargs)
-        self._verbose_logging = self.config.verbose_logging  # 从配置获取详细日志开关
+        # --- 新增诊断代码 ---
+        if kwargs.get('verbose_logging', False) or getattr(WeatherSettings(verbose_logging=True if 'verbose_logging' not in kwargs else kwargs['verbose_logging']), 'verbose_logging', False): # Attempt to get verbose_logging early
+            print(f"DEBUG: CloudSensor.__init__ called with connect={connect}, kwargs={kwargs}")
+        try:
+            # --- 修改：增加详细错误捕获 ---
+            if 'verbose_logging' in kwargs: # 如果 kwargs 中有 verbose_logging，优先使用它
+                temp_verbose_setting = kwargs['verbose_logging']
+            else: # 否则，尝试从 WeatherSettings 的默认值或环境变量获取
+                try:
+                    # 尝试创建一个临时的 WeatherSettings 实例仅用于获取 verbose_logging
+                    # 这本身也可能失败，所以也需要 try-except
+                    temp_settings_for_verbose = WeatherSettings()
+                    temp_verbose_setting = temp_settings_for_verbose.verbose_logging
+                except Exception:
+                    temp_verbose_setting = False # 如果无法获取，默认为 False
+
+            self._verbose_logging = temp_verbose_setting # 在 self.config 赋值前设置
+
+            if self._verbose_logging:
+                print(f"DEBUG: Attempting to initialize WeatherSettings with kwargs: {kwargs}")
+            try:
+                self.config = WeatherSettings(**kwargs)
+            except Exception as e_settings:
+                # 打印更详细的错误信息
+                print(f"[red]DEBUG: FATAL Error during WeatherSettings instantiation in CloudSensor.__init__[/red]")
+                print(f"[red]DEBUG: Exception type: {type(e_settings).__name__}[/red]")
+                print(f"[red]DEBUG: Exception message: {e_settings}[/red]")
+                import traceback
+                print("[red]DEBUG: Full traceback for WeatherSettings error:[/red]")
+                traceback.print_exc() # 打印完整的堆栈跟踪
+                # 可以选择重新抛出一个更通用的错误，或者让原始错误冒泡
+                raise # 重新抛出原始异常，以便服务能感知到初始化失败
+            # --- 结束修改 ---
+             # --- 结束新增诊断代码 ---       
+            # self._verbose_logging = self.config.verbose_logging # 这行现在多余，因为上面已经设置了
+
+        except Exception as e_outer: # 捕获 self.config 设置失败后可能引发的其他问题
+             # 如果 self.config 初始化失败，self._verbose_logging 可能未正确设置
+            print(f"[red]CRITICAL: Failed to initialize self.config in CloudSensor. Error: {e_outer}[/red]")
+            # 对于这种情况，服务无法正常运行，所以应该抛出异常
+            # 如果是因为 WeatherSettings 抛出的，上面的 raise 已经处理了
+            # 这是一个备用捕获，以防万一
+            if not isinstance(e_outer, (SensorCommunicationError, TypeError, ValueError)): # 避免重复包装已知类型
+                 raise RuntimeError(f"CloudSensor config initialization failed critically: {e_outer}") from e_outer
+
+        # 新增：状态属性初始化
+        self._connection_status: ConnectionStatus = ConnectionStatus.INITIALIZING
+        self.last_error_message: str | None = None
+        self.last_successful_read_timestamp: datetime | None = None
+        self.last_connection_attempt_timestamp: datetime | None = None
+        # _is_connected 属性现在通过 property 动态获取
+
 
         try:
             self._sensor: serial.Serial = serial.serial_for_url(self.config.serial_port,
@@ -32,20 +99,17 @@ class CloudSensor(object):
                                                                 timeout=1,
                                                                 do_not_open=True
                                                                 )
-            if connect:
-                if not self._sensor.is_open:
-                    self._sensor.open()
-                # 根据文档 v1.30 (pocketCW支持)，打开端口后可以稍作延时
-                time.sleep(getattr(self.config, 'serial_port_open_delay_seconds', 2))    
-                self._sensor.reset_input_buffer()
-                self._sensor.reset_output_buffer()
-
+         # 注意：实际的 open() 和初始化移至 self.connect()
         except serial.serialutil.SerialException as e:
-            print(f'[red]Unable to connect to weather sensor. Check the port. {e}')
-            raise e
+            self.last_error_message = f"串口初始化失败 (serial_for_url): {e}"
+            self._connection_status = ConnectionStatus.ERROR
+            if self._verbose_logging:
+                print(f'[red]{self.last_error_message}')
+            if connect: # 如果要求立即连接但 serial_for_url 失败，则直接抛出
+                raise SensorCommunicationError(self.last_error_message) from e
 
         self.handshake_block_content = chr(0x11) + (' ' * 12) + '0'
-        self._sensor.read_until_terminator = self.handshake_block_content.encode()
+        # self._sensor.read_until_terminator = self.handshake_block_content.encode() # 移至 open 之后
 
 
         self.handshake_block = r'\x11\s{12}0'
@@ -54,7 +118,7 @@ class CloudSensor(object):
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
-        self.name: str = 'CloudWatcher'
+        self.name: str = 'CloudWatcher' # 将在 connect 中实际获取
         self.firmware: str | None = None
         self.serial_number: str | None = None
         self.has_anemometer: bool = False
@@ -63,12 +127,17 @@ class CloudSensor(object):
         self._is_connected: bool = False
 
         if connect:
-            self._is_connected = self.connect()
+            self.connect(raise_exceptions=True) # 初始连接失败时应抛出异常
 
     @property
     def is_connected(self) -> bool:
-        """ Is the sensor connected?"""
-        return self._is_connected
+        """ Is the sensor connected and communication healthy?"""
+        return self._connection_status == ConnectionStatus.CONNECTED
+
+    # 新增：获取详细连接状态的属性
+    @property
+    def connection_status(self) -> ConnectionStatus:
+        return self._connection_status
 
     @property
     def location(self) -> Location:
@@ -102,21 +171,43 @@ class CloudSensor(object):
         Returns:
             True if connected, False otherwise.
         """
+        if self._verbose_logging: print(f"[cyan]尝试连接到传感器 (端口: {self.config.serial_port})...")
+        self._connection_status = ConnectionStatus.ATTEMPTING_RECONNECT
+        self.last_connection_attempt_timestamp = datetime.now(timezone.utc)
+
         try:
-            if not self._sensor.is_open:
-                self._sensor.open()
-                time.sleep(getattr(self.config, 'serial_port_open_delay_seconds', 2))
+            if not hasattr(self, '_sensor'): # 防御性检查，通常在 __init__ 中已创建
+                self._sensor: serial.Serial = serial.serial_for_url(self.config.serial_port,
+                                                                baudrate=9600,
+                                                                timeout=1,
+                                                                do_not_open=True)
+            
+            if self._sensor.is_open: # 如果之前是打开的，先关闭再重新打开，确保状态干净
+                self._sensor.close()
+                time.sleep(0.1) # 短暂延时
+
+            self._sensor.open()
+            #self._sensor.read_until_terminator = self.handshake_block_content.encode() # 设置 read_until 的终止符 # pyserial 没有这个属性
+            time.sleep(getattr(self.config, 'serial_port_open_delay_seconds', 2))    
             
             self._sensor.reset_input_buffer()
             self._sensor.reset_output_buffer()
 
-            # 初始化并获取静态值。
-            name_resp = self.query(WeatherCommand.GET_INTERNAL_NAME, parse_type=str)
-            self.name = name_resp if isinstance(name_resp, str) else 'CloudWatcher'
-            
-            firmware_resp = self.query(WeatherCommand.GET_FIRMWARE, parse_type=str)
 
-            match = re.search(r"(\d+\.\d+)", firmware_resp)
+            # 初始化并获取静态值。
+            # query 方法现在可能返回哨兵或抛出 SensorCommunicationError
+            name_resp_val = self.query(WeatherCommand.GET_INTERNAL_NAME, parse_type=str)
+            if name_resp_val is COMMUNICATION_ERROR_SENTINEL or name_resp_val is None:
+                # 如果 query 返回哨兵或 None，说明通信或解析失败
+                raise SensorCommunicationError("连接后获取内部名称失败")
+            self.name = name_resp_val if isinstance(name_resp_val, str) else 'CloudWatcher'
+            
+            firmware_resp_val = self.query(WeatherCommand.GET_FIRMWARE, parse_type=str)
+            if firmware_resp_val is COMMUNICATION_ERROR_SENTINEL or firmware_resp_val is None:
+                 raise SensorCommunicationError("连接后获取固件版本失败")
+
+
+            match = re.search(r"(\d+\.\d+)", firmware_resp_val)
             if match:
                 version_number = match.group(1)  # group(1) 获取第一个捕获组的内容
                 self.firmware = version_number 
@@ -124,51 +215,80 @@ class CloudSensor(object):
             else:
                 self._verbose_logging: print("未能找到版本号")            
             
-            sn_resp = self.query(WeatherCommand.GET_SERIAL_NUMBER, parse_type=str,return_codes = True)
-            self.serial_number = sn_resp[1:5] if isinstance(sn_resp, str) and len(sn_resp) >=4 else None  # !Kxxxx
+            sn_resp_val = self.query(WeatherCommand.GET_SERIAL_NUMBER, parse_type=str, return_codes=True)
+            if sn_resp_val is COMMUNICATION_ERROR_SENTINEL or sn_resp_val is None:
+                raise SensorCommunicationError("连接后获取序列号失败")
+            self.serial_number = sn_resp_val[1:5] if isinstance(sn_resp_val, str) and len(sn_resp_val) >=5 else None # !Kxxxx
 
-            # 检查是否有风速计
-            # AAG 'v!' command tells if anemometer is present.
-            # query should return True/False for CAN_GET_WINDSPEED
-            can_get_wind = self.query(WeatherCommand.CAN_GET_WINDSPEED, parse_type=str) # 'v!' returns '!v Y' or '!v N'
-            self.has_anemometer = True if isinstance(can_get_wind, str) and 'Y' in can_get_wind.upper() else False
+            can_get_wind_val = self.query(WeatherCommand.CAN_GET_WINDSPEED, parse_type=str) # 'v!' returns '!v Y' or '!v N'
+            if can_get_wind_val is COMMUNICATION_ERROR_SENTINEL: # 这里允许 None，因为 query 对布尔型返回 'Y'/'N'
+                raise SensorCommunicationError("连接后检查风速计能力失败")
+            self.has_anemometer = True if isinstance(can_get_wind_val, str) and 'Y' in can_get_wind_val.upper() else False
 
             self.has_heater = self.config.have_heater  #如果没有加热器，就不用处理PWM了。
 
             # 启动时将PWM设置为最小值。
-            self.set_pwm(self.config.heater.min_power)
+            if self.has_heater:
+                pwm_set_success = self.set_pwm(self.config.heater.min_power)
+                if pwm_set_success is COMMUNICATION_ERROR_SENTINEL or not pwm_set_success :
+                    if self._verbose_logging: print("[yellow]警告: 连接后设置初始PWM值失败或通信错误。")
+                    # 不因此次失败而中断整个连接过程
 
-            self._is_connected = True
-        except Exception as e:
-            if self._verbose_logging: print(f'[red]连接天气传感器失败。检查端口。 {e}')
+            self._connection_status = ConnectionStatus.CONNECTED # 所有初始化查询成功后，才标记为已连接
+            self.last_error_message = None # 清除旧的错误信息
+            if self._verbose_logging: print('[green]传感器连接成功并初始化完成。')
+            return True
+        except (serial.serialutil.SerialException, SensorCommunicationError, OSError) as e: # OSError for device not configured
+            self.last_error_message = f"连接传感器失败: {e}"
+            self._connection_status = ConnectionStatus.ERROR
+            if self._verbose_logging: print(f'[red]{self.last_error_message}')
+            if hasattr(self, '_sensor') and self._sensor.is_open:
+                try:
+                    self._sensor.close()
+                except Exception as close_err:
+                    if self._verbose_logging: print(f"[red]关闭失败的串口时发生错误: {close_err}")
+
             if raise_exceptions:
-                raise e
-            self._is_connected = False
-        return self._is_connected
+                # 确保抛出的是 SensorCommunicationError
+                if not isinstance(e, SensorCommunicationError):
+                    raise SensorCommunicationError(self.last_error_message) from e
+                else:
+                    raise # 重新抛出已包装的 SensorCommunicationError
+            return Falsed
 
     def capture(self, callback: Callable | None = None, units: WhichUnits = 'none', verbose: bool = False) -> None:
         """连续捕获读数。"""
+        # 注意：此方法目前不由 server.py 的周期任务使用，主要用于 cli.py。
+        # 如果将来 server.py 也使用此模式，这里的重连逻辑需要与 periodic_task 中的对齐。
         current_verbose = verbose or self._verbose_logging
         try:
             while True:
-                if not self.is_connected:
-                    if current_verbose: print("[yellow]传感器未连接，尝试重新连接...")
-                    if not self.connect(raise_exceptions=False):
-                        if current_verbose: print("[red]重新连接失败，等待后重试...")
-                        time.sleep(self.config.capture_delay * 2) # 连接失败时等待更长时间
+                if self.connection_status != ConnectionStatus.CONNECTED:
+                    if current_verbose: print(f"[yellow]传感器状态: {self.connection_status.value}。尝试重新连接...")
+                    if not self.connect(raise_exceptions=False): # 调用修改后的 connect
+                        if current_verbose: print(f"[red]重新连接失败 ({self.last_error_message})，等待后重试...")
+                        time.sleep(self.config.capture_delay * 2) 
                         continue
                     if current_verbose: print("[green]传感器重新连接成功。")
 
-                reading = self.get_reading(units=units, verbose=current_verbose) # 将verbose传递下去
+                # get_reading 现在返回数据或 None (如果当次读取失败)
+                reading_data = self.get_reading(units=units, verbose=current_verbose) 
 
-                if callback is not None:
-                    callback(reading)
+                if reading_data is not None: # 仅当成功获取读数时才回调
+                    if callback is not None:
+                        callback(reading_data)
+                else:
+                    if current_verbose: print(f"[yellow]本次读数捕获失败，状态: {self.connection_status.value}, 错误: {self.last_error_message}")
+                    # 如果 get_reading 失败，它内部已更新状态，这里不需要额外操作
+                    # 等待下次循环尝试（可能包括重连）
 
                 time.sleep(self.config.capture_delay)
         except KeyboardInterrupt:
             if current_verbose: print("\n[yellow]捕获已由用户中断。")
-            pass
         except Exception as e:
+            if current_verbose: print(f"[red]在捕获循环中发生意外错误: {e}")
+            self._connection_status = ConnectionStatus.ERROR
+            self.last_error_message = f"捕获循环错误: {e}"
             if current_verbose: print(f"[red]在捕获循环中发生错误: {e}")
 
     def get_reading(self, units: WhichUnits = 'none', get_errors: bool = False, avg_times: int = 1, verbose: bool = False) -> dict: # avg_times 默认改为1，与server.py一致
@@ -186,94 +306,141 @@ class CloudSensor(object):
         # 决定实际使用的 verbose 级别
         current_verbose = verbose or self._verbose_logging
         
-        def avg_readings(fn_to_avg: Callable, n: int = avg_times, skip_avg: bool = False) -> float | int | None:
-            if skip_avg or n <= 1: # 如果n为1或skip_avg为True，则只读取一次
+        # 在尝试读取任何数据前，检查连接状态
+        if self.connection_status != ConnectionStatus.CONNECTED:
+            if current_verbose: print(f"[yellow]get_reading 跳过：传感器未连接 (状态: {self.connection_status.value})。")
+            return None
+
+        # 用于跟踪本次 get_reading 期间是否发生通信错误
+        communication_error_occured_this_cycle = False
+
+        def avg_readings(fn_to_avg: Callable, n: int = avg_times, skip_avg: bool = False) -> float | int | None | object:
+            nonlocal communication_error_occured_this_cycle
+            if communication_error_occured_this_cycle: # 如果周期中已有错误，则不再尝试读取
+                return COMMUNICATION_ERROR_SENTINEL
+
+            if skip_avg or n <= 1:
                 val = fn_to_avg()
+                if val is COMMUNICATION_ERROR_SENTINEL:
+                    communication_error_occured_this_cycle = True
+                    return COMMUNICATION_ERROR_SENTINEL
                 if val is not None:
                     try:
-                        return round(float(val), 3)
+                        return round(float(val), 2)
                     except (ValueError, TypeError):
                         if current_verbose: print(f"[yellow]警告: {fn_to_avg.__name__} 的单次读取值无法转换为浮点数: {val!r}")
                         return None
                 return None
 
             values = []
-            for _ in range(n):
+            for i in range(n):
                 val = fn_to_avg()
+                if val is COMMUNICATION_ERROR_SENTINEL:
+                    communication_error_occured_this_cycle = True
+                    return COMMUNICATION_ERROR_SENTINEL
                 if val is not None:
                     try:
                         values.append(float(val))
                     except (ValueError, TypeError):
-                        if current_verbose: print(f"[yellow]警告: {fn_to_avg.__name__} 的平均过程中遇到非数字值: {val!r}")
+                        if current_verbose: print(f"[yellow]警告: {fn_to_avg.__name__} 的平均过程中遇到非数字值 ({i+1}/{n}): {val!r}")
                 elif current_verbose:
-                     print(f"[grey]调试: avg_readings 从 {fn_to_avg.__name__} 获得了 None")
+                     print(f"[grey]调试: avg_readings 从 {fn_to_avg.__name__} 获得了 None ({i+1}/{n})")
+                
+                if communication_error_occured_this_cycle: # 检查循环内部是否发生错误
+                    return COMMUNICATION_ERROR_SENTINEL
+
 
             if not values:
                 if current_verbose: print(f"[yellow]警告: {fn_to_avg.__name__} 的所有 {n} 次读数均无效或为 None。")
                 return None
-            return round(sum(values) / len(values), 3)
+            return round(sum(values) / len(values), 2)
 
-        def avg_times(fn, n=avg_times):
-            return round(sum(fn() for _ in range(n)) / n, 3)
 
-        # 首先获取 "C!" 命令返回的所有值
-        # 这很重要，因为其他计算可能依赖这些值，或者新的传感器数据在这里
-        c_command_data = self.get_rain_sensor_values() # <--- 在这里调用   
+        # --- 开始获取读数 ---
+        # C! 命令获取的值，如果失败，则整个读数周期失败
+        c_command_data_val = self.get_rain_sensor_values()
+        if c_command_data_val is COMMUNICATION_ERROR_SENTINEL:
+            if current_verbose: print("[red]get_reading 中断：获取 C! 命令数据失败。")
+            # self._connection_status 和 self.last_error_message 已在 query/read/write 中更新
+            return None # 表示本次 get_reading 失败
+        
+        # 确保 c_command_data_val 是字典，即使 query 成功但解析部分失败也可能返回空字典
+        c_command_data = c_command_data_val if isinstance(c_command_data_val, dict) else {}   
+        
+        reading_values = {} # 使用临时字典存储值
+               # 辅助函数检查哨兵并更新 communication_error_occured_this_cycle
+        def process_value(key_name, value_or_sentinel):
+            nonlocal communication_error_occured_this_cycle
+            if value_or_sentinel is COMMUNICATION_ERROR_SENTINEL:
+                communication_error_occured_this_cycle = True
+                if current_verbose: print(f"[red]通信错误导致获取 {key_name} 失败。")
+                return None # 返回 None 表示该值获取失败，但不一定是哨兵
+            return value_or_sentinel
 
-        reading = {
-            'timestamp': datetime.now(timezone.utc).isoformat(),
-            'sky_temp': avg_readings(self.get_sky_temperature),
-            'wind_speed': avg_readings(lambda: self.get_wind_speed(skip_averaging=True)), # 使用 lambda
-            'rain_frequency': avg_readings(self.get_rain_frequency),
-            'humidity':avg_readings(self.get_humidity),
-            'pressure':avg_readings(self.get_pressure),
-            'RH_sensor_temp':avg_readings(self.get_rh_sensor_temp), # 使用 get_rh_sensor_temp
-            'pressure_temp':avg_readings(self.get_pressure_temp),
-            "switch":self.get_switch_status_custom(),
-            'pwm': self.get_pwm(),
-        }
+        reading_values['sky_temp'] = process_value('sky_temp', avg_readings(self.get_sky_temperature))
+        reading_values['wind_speed'] = process_value('wind_speed', avg_readings(lambda: self.get_wind_speed(skip_averaging=True)))
+        reading_values['rain_frequency'] = process_value('rain_frequency', avg_readings(self.get_rain_frequency))
+        reading_values['humidity'] = process_value('humidity', avg_readings(self.get_humidity))
+        reading_values['pressure'] = process_value('pressure', avg_readings(self.get_pressure))
+        reading_values['RH_sensor_temp'] = process_value('RH_sensor_temp', avg_readings(self.get_rh_sensor_temp))
+        reading_values['pressure_temp'] = process_value('pressure_temp', avg_readings(self.get_pressure_temp))
+        reading_values['switch'] = process_value('switch', self.get_switch_status_custom())
+        reading_values['pwm'] = process_value('pwm', self.get_pwm())
+
+        if communication_error_occured_this_cycle:
+            if current_verbose: print("[red]get_reading 中断：在获取一个或多个基础传感器值时发生通信错误。")
+            # 状态已在底层更新
+            return None # 本次读数无效
+
+        # --- 后续计算基于已获取的值 ---
+        # (如果上面任何一个值是 None 但不是哨兵，计算会继续，结果可能是 None)
+        final_reading_dict = {'timestamp': datetime.now(timezone.utc).isoformat()}
+        final_reading_dict.update(reading_values)
 
         # 环境温度直接取RH传感器温度  根据文档，RH温度传感器更加准确。
-        if reading.get('RH_sensor_temp') is not None:
-            reading['ambient_temp'] = reading['RH_sensor_temp']
-        else: # 如果RH_sensor_temp为None，尝试使用旧的get_ambient_temperature (IR sensor temp)
-            reading['ambient_temp'] = avg_readings(self.get_ambient_temperature) # IR sensor temp
-            reading['RH_sensor_temp'] = reading['ambient_temp'] 
+        if final_reading_dict.get('RH_sensor_temp') is not None:
+            final_reading_dict['ambient_temp'] = final_reading_dict['RH_sensor_temp']
+        else:
+            final_reading_dict['ambient_temp'] = process_value('ambient_temp_fallback', avg_readings(self.get_ambient_temperature))
+            if communication_error_occured_this_cycle: return None # 再次检查
+            final_reading_dict['RH_sensor_temp'] = final_reading_dict['ambient_temp']
             if current_verbose: print("[yellow]警告: RH_sensor_temp 不可用，ambient_temp 使用 IR 传感器温度作为备用。")
 
         # 从 c_command_data 提取原始值，使用 get_values_raw (它处理None并返回哨兵值)
         # get_values_raw 的第二个参数期望是 WeatherResponseCodes 枚举成员
-        #亮度传感器高精度 原始值
-        reading['light_sensor_period_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_LIGHT_SENSOR, verbose=current_verbose)
-        #环境温度传感器 NTC 电压值（Ambient Temp NTC) 0-1023
-        reading['ambient_temp_ntc_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_AMBIENT, verbose=current_verbose)
-        #LDR环境亮度 0-1023
-        reading['ambient_ldr_voltage_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_LDR_VOLTAGE, verbose=current_verbose) # 已修正
-        #Zener Voltage reference 齐纳电压 0-1023
-        reading['zener_voltage_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_ZENER_VOLTAGE, verbose=current_verbose)
-        #雨量传感器 电压值
-        reading['rain_sensor_temp_ntc_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_SENSOR_TEMP, verbose=current_verbose)
+        # 从 c_command_data 提取原始值
 
+        final_reading_dict['light_sensor_period_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_LIGHT_SENSOR, verbose=current_verbose)
+        #环境温度传感器 NTC 电压值（Ambient Temp NTC) 0-1023
+        final_reading_dict['ambient_temp_ntc_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_AMBIENT, verbose=current_verbose)
+        #LDR环境亮度 0-1023
+        final_reading_dict['ambient_ldr_voltage_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_LDR_VOLTAGE, verbose=current_verbose)
+        #Zener Voltage reference 齐纳电压 0-1023        
+        final_reading_dict['zener_voltage_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_ZENER_VOLTAGE, verbose=current_verbose)
+        #雨量传感器 电压值        
+        final_reading_dict['rain_sensor_temp_ntc_raw'] = self.get_values_raw(c_command_data, WeatherResponseCodes.GET_VALUES_SENSOR_TEMP, verbose=current_verbose)
 
         # 取相对气压
         # 先获取依赖值
-        current_pressure_val = reading['pressure']
-        pressure_temp_val = reading['pressure_temp']
+        current_pressure_val = final_reading_dict['pressure']
+        pressure_temp_val = final_reading_dict['pressure_temp']
         # 然后传递这些值来计算 pres_pressure ,是根据 实际气压 和温度 计算的，不需要再算平均值了
         if current_pressure_val is not None and pressure_temp_val is not None:
             try:
-                reading['pres_pressure'] = round(self.get_pres_pressure(current_pressure_val, pressure_temp_val, verbose=current_verbose), 3)
+                # get_pres_pressure 不直接进行 query，所以不需要哨兵检查
+                final_reading_dict['pres_pressure'] = round(self.get_pres_pressure(current_pressure_val, pressure_temp_val, verbose=current_verbose), 2)
             except Exception as e:
                 if current_verbose: print(f"[yellow]计算相对气压时出错: {e}")
-                reading['pres_pressure'] = None
+                final_reading_dict['pres_pressure'] = None
         else:
-            reading['pres_pressure'] = current_pressure_val
+            final_reading_dict['pres_pressure'] = current_pressure_val # 或 None
             if current_verbose: print("[yellow]跳过相对气压计算：绝对气压或其温度为 None。")
 
 
         # 计算露点
-        ambient_temp_for_dew = reading['ambient_temp'] # 使用最佳的环境温度源,用湿度传感器温度计替代，手册上说更加准确
-        humidity_for_dew = reading['humidity']
+        # 使用最佳的环境温度源,用湿度传感器温度计替代，手册上说更加准确
+        ambient_temp_for_dew = final_reading_dict['ambient_temp']
+        humidity_for_dew = final_reading_dict['humidity']
         if ambient_temp_for_dew is not None and humidity_for_dew is not None:
             try:
                 T = float(ambient_temp_for_dew)
@@ -293,26 +460,26 @@ class CloudSensor(object):
 
                     alpha = math.log(RH_actual / 100.0) + (A * T) / (B + T)
                     dew_point_val = (B * alpha) / (A - alpha)
-                    reading['dew_point'] = round(dew_point_val, 3)
+                    final_reading_dict['dew_point'] = round(dew_point_val, 2)
             except (ValueError, TypeError, ZeroDivisionError, OverflowError) as e:
                 if current_verbose: print(f"[yellow]警告：计算露点时出错: {e}")
-                reading['dew_point'] = None
+                final_reading_dict['dew_point'] = None
         else:
-            reading['dew_point'] = None
+            final_reading_dict['dew_point'] = None
             if current_verbose: print("[yellow]跳过露点计算：环境温度或湿度为 None。")
     
 
         # 添加 MPSAS 天空质量
-        raw_period_for_mpsas = reading.get('light_sensor_period_raw') 
+        raw_period_for_mpsas = final_reading_dict.get('light_sensor_period_raw')
         # 确保 raw_period_for_mpsas 不是哨兵值 -99
         if raw_period_for_mpsas == -99: raw_period_for_mpsas = None
 
-        ambient_temp_for_mpsas = reading['ambient_temp'] 
-        reading['sky_quality_mpsas'] = None 
+        ambient_temp_for_mpsas = final_reading_dict['ambient_temp']
+        final_reading_dict['sky_quality_mpsas'] = None 
 
         if raw_period_for_mpsas is not None and ambient_temp_for_mpsas is not None:
             try:
-                reading['sky_quality_mpsas'] = self._calculate_mpsas(raw_period_for_mpsas, ambient_temp_for_mpsas)
+                final_reading_dict['sky_quality_mpsas'] = self._calculate_mpsas(raw_period_for_mpsas, ambient_temp_for_mpsas)
             except Exception as e:
                  if current_verbose: print(f"[red]计算 MPSAS 时发生错误: {e}")
         elif raw_period_for_mpsas is not None and current_verbose: 
@@ -322,14 +489,22 @@ class CloudSensor(object):
 
 
         if get_errors:
-            errors_list = self.get_errors()
-            if errors_list is not None and isinstance(errors_list, list) :
-                reading.update(**{f'error_{i:02d}': err for i, err in enumerate(errors_list)})
-            elif errors_list is not None: 
-                reading['error_00'] = errors_list
-
+            errors_list_val = self.get_errors() # get_errors 内部调用 query
+            if errors_list_val is COMMUNICATION_ERROR_SENTINEL:
+                communication_error_occured_this_cycle = True
+            elif errors_list_val is not None:
+                 if isinstance(errors_list_val, list) :
+                    final_reading_dict.update(**{f'error_{i:02d}': err for i, err in enumerate(errors_list_val)})
+                 else: 
+                    final_reading_dict['error_00'] = errors_list_val
+        
+        if communication_error_occured_this_cycle:
+            if current_verbose: print("[red]get_reading 中断：在获取错误代码时发生通信错误。")
+            return None # 本次读数无效
+        
         # Add the safety values.
-        reading = self.get_safe_reading(reading)
+        # --- 如果到这里都没有通信错误 ---
+        final_reading_dict = self.get_safe_reading(final_reading_dict)
 
         # Add astropy units if requested.
         if units != 'none':
@@ -349,34 +524,53 @@ class CloudSensor(object):
                     except (ValueError, TypeError):
                         if current_verbose: print(f"[yellow]警告：无法为字段 '{field}' 应用单位，值：{reading.get(field)!r}")
 
+            for field, unit in metric_fields_units.items():
+                if final_reading_dict.get(field) is not None and final_reading_dict.get(field) != -99: # 不为哨兵值才加单位
+                    try:
+                        final_reading_dict[field] = float(final_reading_dict[field]) * unit
+                    except (ValueError, TypeError):
+                        if current_verbose: print(f"[yellow]警告：无法为字段 '{field}' 应用单位，值：{final_reading_dict.get(field)!r}")
+
             if units == 'imperial':
                 with suppress(AttributeError, ValueError, TypeError): 
-                    if reading.get('ambient_temp') is not None and isinstance(reading['ambient_temp'], u.Quantity): 
-                        reading['ambient_temp'] = reading['ambient_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                    if reading.get('sky_temp') is not None and isinstance(reading['sky_temp'], u.Quantity): 
-                        reading['sky_temp'] = reading['sky_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                    if reading.get('RH_sensor_temp') is not None and isinstance(reading['RH_sensor_temp'], u.Quantity): 
-                        reading['RH_sensor_temp'] = reading['RH_sensor_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                    if reading.get('pressure_temp') is not None and isinstance(reading['pressure_temp'], u.Quantity): 
-                        reading['pressure_temp'] = reading['pressure_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                    if reading.get('dew_point') is not None and isinstance(reading['dew_point'], u.Quantity): 
-                        reading['dew_point'] = reading['dew_point'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                    if reading.get('wind_speed') is not None and isinstance(reading['wind_speed'], u.Quantity): 
-                        reading['wind_speed'] = reading['wind_speed'].to(u.imperial.mile / u.hour)
-                    if reading.get('pressure') is not None and isinstance(reading['pressure'], u.Quantity): 
-                        reading['pressure'] = reading['pressure'].to(u.imperial.in_Hg)
-                    if reading.get('pres_pressure') is not None and isinstance(reading['pres_pressure'], u.Quantity): 
-                        reading['pres_pressure'] = reading['pres_pressure'].to(u.imperial.in_Hg)
+                    # ... (英制单位转换逻辑保持不变) ...
+                    if final_reading_dict.get('ambient_temp') is not None and isinstance(final_reading_dict['ambient_temp'], u.Quantity): 
+                        final_reading_dict['ambient_temp'] = final_reading_dict['ambient_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                    # ... (其他字段类似)
+                    if final_reading_dict.get('sky_temp') is not None and isinstance(final_reading_dict['sky_temp'], u.Quantity): 
+                        final_reading_dict['sky_temp'] = final_reading_dict['sky_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                    if final_reading_dict.get('RH_sensor_temp') is not None and isinstance(final_reading_dict['RH_sensor_temp'], u.Quantity): 
+                        final_reading_dict['RH_sensor_temp'] = final_reading_dict['RH_sensor_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                    if final_reading_dict.get('pressure_temp') is not None and isinstance(final_reading_dict['pressure_temp'], u.Quantity): 
+                        final_reading_dict['pressure_temp'] = final_reading_dict['pressure_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                    if final_reading_dict.get('dew_point') is not None and isinstance(final_reading_dict['dew_point'], u.Quantity): 
+                        final_reading_dict['dew_point'] = final_reading_dict['dew_point'].to(u.imperial.deg_F, equivalencies=u.temperature())
+                    if final_reading_dict.get('wind_speed') is not None and isinstance(final_reading_dict['wind_speed'], u.Quantity): 
+                        final_reading_dict['wind_speed'] = final_reading_dict['wind_speed'].to(u.imperial.mile / u.hour)
+                    if final_reading_dict.get('pressure') is not None and isinstance(final_reading_dict['pressure'], u.Quantity): 
+                        final_reading_dict['pressure'] = final_reading_dict['pressure'].to(u.imperial.in_Hg)
+                    if final_reading_dict.get('pres_pressure') is not None and isinstance(final_reading_dict['pres_pressure'], u.Quantity): 
+                        final_reading_dict['pres_pressure'] = final_reading_dict['pres_pressure'].to(u.imperial.in_Hg)
 
-        final_reading = {}
-        for key, value in reading.items():
+        # 去除 astropy 单位，得到最终的纯数据字典
+        processed_final_reading = {}
+        for key, value in final_reading_dict.items():
             if isinstance(value, u.Quantity):
-                final_reading[key] = value.value 
+                processed_final_reading[key] = value.value
             else:
-                final_reading[key] = value
+                processed_final_reading[key] = value
         
-        self.readings.append(final_reading) 
-        return final_reading
+        # 只有在完全成功获取和处理所有数据后才更新
+        self.readings.append(processed_final_reading)
+        self.last_successful_read_timestamp = datetime.now(timezone.utc)
+        # 如果之前是 ERROR 或 DISCONNECTED，现在成功读取，则更新状态
+        if self._connection_status != ConnectionStatus.CONNECTED:
+             if self._verbose_logging: print(f"[green]数据读取成功，传感器状态恢复为 CONNECTED (之前是 {self._connection_status.value})")
+        self._connection_status = ConnectionStatus.CONNECTED 
+        self.last_error_message = None # 清除错误信息
+
+        #一个读取周期终于完成了
+        return processed_final_reading
 
     def get_safe_reading(self, reading: dict) -> dict:
         """ Checks the reading against the thresholds.
@@ -486,18 +680,24 @@ class CloudSensor(object):
 
         return reading
 
-    def get_errors(self) -> list[int]:
-        """Gets the number of internal errors
+    def get_errors(self) -> list[int] | object: # 可能返回哨兵
+        responses_val = self.query(WeatherCommand.GET_INTERNAL_ERRORS, return_codes=True)
+        if responses_val is COMMUNICATION_ERROR_SENTINEL:
+            return COMMUNICATION_ERROR_SENTINEL
+        
+        if responses_val is None or not isinstance(responses_val, list): # query 可能返回 None 或非列表
+            return [] # 或者根据具体情况处理
 
-        Returns:
-            A list of integer error codes.
-        """
-        responses = self.query(WeatherCommand.GET_INTERNAL_ERRORS, return_codes=True)
-
-        for i, response in enumerate(responses.copy()):
-            responses[i] = int(response[2:])
-
-        return responses
+        parsed_errors = []
+        for i, response_item in enumerate(responses_val):
+            if isinstance(response_item, str) and len(response_item) > 2 : # 确保是 "EXX" 格式
+                try:
+                    parsed_errors.append(int(response_item[2:]))
+                except ValueError:
+                    if self._verbose_logging: print(f"[yellow]解析错误码失败: {response_item}")
+            else:
+                 if self._verbose_logging: print(f"[yellow]无效的错误码格式: {response_item}")
+        return parsed_errors
 
     def _calculate_mpsas(self, raw_period: int | None, ambient_temp_celsius: float | None) -> float | None:
         """根据原始周期和环境温度计算 MPSAS。
@@ -534,7 +734,7 @@ class CloudSensor(object):
             # Rs232_Comms_v140.pdf 第2页的温度校正公式
             mpsas_corrected = (mpsas - 0.042) + (0.00212 * float(ambient_temp_celsius))
 
-            return round(mpsas_corrected, 3) # 保留三位小数
+            return round(mpsas_corrected, 2) 
         except (ValueError, TypeError, OverflowError, ZeroDivisionError, AttributeError) as e:
             if self._verbose_logging: print(f"[red]计算 MPSAS 时出错: {e}")
             return None
@@ -547,7 +747,9 @@ class CloudSensor(object):
         Returns:
             The sky temperature in Celsius.
         """
-        return self.query(WeatherCommand.GET_SKY_TEMP) / 100.
+        val = self.query(WeatherCommand.GET_SKY_TEMP)
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return val / 100. if val is not None else None # query 返回 float 或 None (非通信错误时)
 
     def get_ambient_temperature(self) -> float:
         """Gets the latest ambient temperature reading.
@@ -555,7 +757,9 @@ class CloudSensor(object):
         Returns:
             The ambient temperature in Celsius.
         """
-        return self.query(WeatherCommand.GET_SENSOR_TEMP) / 100.
+        val = self.query(WeatherCommand.GET_SENSOR_TEMP)
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return val / 100. if val is not None else None
     
     def get_humidity(self) -> float:
         """Gets the latest relative humidity reading (in %).
@@ -563,7 +767,9 @@ class CloudSensor(object):
         Returns:
             The humidity in %.
         """
-        return round((self.query(WeatherCommand.GET_HUMIDITY) * 125.0 / 65536.0 ) -6.0 ,3)
+        val = self.query(WeatherCommand.GET_HUMIDITY)
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return round((val * 125.0 / 65536.0 ) -6.0 ,2) if val is not None else None
     
     def get_pressure(self) -> float:
         """Gets the latest Absolute pressure in Pa reading.
@@ -571,7 +777,9 @@ class CloudSensor(object):
         Returns:
             The Absolute pressure in Pa.
         """
-        return round(self.query(WeatherCommand.GET_PRESSURE) / 16.0 ,3)
+        val = self.query(WeatherCommand.GET_PRESSURE)
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return round(val / 16.0 ,2) if val is not None else None
 
 
     def get_pres_pressure(self, current_absolute_pressure: float | None, 
@@ -644,7 +852,7 @@ class CloudSensor(object):
             
         try:
             # 指数 -5.275 (来自AAG文档，近似于标准大气公式中的 -g*M/(R*L))
-            relative_pressure_pa = round(abs_pres_pa * (base ** (-5.275)), 3)
+            relative_pressure_pa = round(abs_pres_pa * (base ** (-5.275)), 2)
             return relative_pressure_pa # 成功计算，返回相对气压
         except (ValueError, OverflowError) as e: # 数学运算错误
             if verbose: print(f"[red]计算海平面气压时发生数学错误: {e}。将返回绝对气压。")
@@ -690,7 +898,9 @@ class CloudSensor(object):
         Returns:
             The HR sensor temprature  in Celsius.
         """
-        return (self.query(WeatherCommand.GET_RH_SENSOR_TEMP) * 172.72 / 65536.0 ) - 46.85
+        val = self.query(WeatherCommand.GET_RH_SENSOR_TEMP)
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return round((val * 172.72 / 65536.0 ) - 46.85, 2) if val is not None else None
 
     def get_pressure_temp(self) -> float:
         """Gets the latest pressure sensor temperature reading.
@@ -698,7 +908,9 @@ class CloudSensor(object):
         Returns:
             The pressure sensor temprature  in Celsius.
         """
-        return self.query(WeatherCommand.GET_PRESSURE_TEMP) / 100.00
+        val = self.query(WeatherCommand.GET_PRESSURE_TEMP)
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return round(val / 100.00, 2) if val is not None else None
 
     def get_rain_sensor_values(self) -> dict: # 返回类型现在是 Dict[WeatherResponseCodes, int | None] 或类似
         """
@@ -715,12 +927,14 @@ class CloudSensor(object):
             }
             如果出错或未收到有效数据块，则相关键可能缺失或值为 None。
         """
-        block_contents = self.query(WeatherCommand.GET_VALUES, return_codes=True) # 返回 "XXyyyyyyyyyyyy" 字符串的列表
+        block_contents_val = self.query(WeatherCommand.GET_VALUES, return_codes=True) # 返回 "XXyyyyyyyyyyyy" 字符串的列表
+        if block_contents_val is COMMUNICATION_ERROR_SENTINEL:
+            return COMMUNICATION_ERROR_SENTINEL 
 
         parsed_values = {} # 初始化为空字典
-        if not block_contents or not isinstance(block_contents, list):
-            print("[yellow]警告：未从 GET_VALUES (C!) 命令收到数据块。")
-            return parsed_values
+        if not block_contents_val or not isinstance(block_contents_val, list):
+            if self._verbose_logging: print("[yellow]警告：未从 GET_VALUES (C!) 命令收到数据块或返回类型不正确。")
+            return parsed_values # 返回空字典，而不是 None，以便上层处理
 
         # 创建一个从块标识符字符串 (例如 "6 ") 到相应 WeatherResponseCodes 枚举成员的映射
         # 这有助于我们从字符串标识符反向查找到枚举成员用作键
@@ -730,14 +944,13 @@ class CloudSensor(object):
         }
         # 例如, identifier_to_enum_member_map['6 '] 会是 WeatherResponseCodes.GET_VALUES_ZENER_VOLTAGE
 
-        for content in block_contents:  # content 的格式是 "XXyyyyyyyyyyyy"
-            if len(content) != 14:
-                print(f"[yellow]警告: 无效的数据块内容长度: {content!r}")
+        for content in block_contents_val:
+            if not isinstance(content, str) or len(content) != 14 : # 确保是 "XXyyyyyyyyyyyy"
+                if self._verbose_logging: print(f"[yellow]警告: 无效的数据块内容: {content!r}")
                 continue
 
             identifier_xx_with_space = content[0:2]  # 前两个字符是 XX (例如 "3 ", "8 ")
-            value_str = content[2:].strip()          # 剩余部分是 yyyyyyyyyyyy，去除前后空格
-            
+            value_str = content[2:].strip()  # 剩余部分是 yyyyyyyyyyyy，去除前后空格
             enum_member_key = identifier_to_enum_member_map.get(identifier_xx_with_space)
 
             if enum_member_key:
@@ -745,13 +958,11 @@ class CloudSensor(object):
                     # 根据AAG文档，"C!"命令返回的这些 xxxx 值是整数 (ADC读数或计数)
                     parsed_values[enum_member_key] = int(value_str)
                 except (ValueError, TypeError) as e:
-                    print(f"[yellow]警告：无法将标识符 '{identifier_xx_with_space}' 的值 '{value_str}' 解析为整数: {e}")
+                    if self._verbose_logging: print(f"[yellow]警告：无法将标识符 '{identifier_xx_with_space}' 的值 '{value_str}' 解析为整数: {e}")
                     parsed_values[enum_member_key] = None # 解析失败则存入 None
-            else:
-                # 如果 verbose 标志可用，可以在这里打印未处理的标识符
-                # print(f"[grey]调试: 在 'C!' 命令响应中遇到未知或未处理的块标识符: '{identifier_xx_with_space}'")
-                pass
-        
+            else: # 忽略未知标识符
+                if self._verbose_logging: print(f"[grey]调试: 在 'C!' 命令响应中遇到未知或未处理的块标识符: '{identifier_xx_with_space}'")
+
         return parsed_values
 
 
@@ -761,7 +972,9 @@ class CloudSensor(object):
         Returns:
             The rain frequency in Hz (?).
         """
-        return self.query(WeatherCommand.GET_RAIN_FREQUENCY, parse_type=int)
+        val = self.query(WeatherCommand.GET_RAIN_FREQUENCY, parse_type=int)
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return val # query 返回 int 或 None
 
     def get_pwm(self) -> float:
         """Gets the latest PWM reading.
@@ -769,9 +982,11 @@ class CloudSensor(object):
         Returns:
             The PWM value as a percentage.
         """
-        if not self.has_heater: return None
-        
-        return self.query(WeatherCommand.GET_PWM, parse_type=int) / 1023 * 100
+        if not self.has_heater: return None # 如果没有加热器，直接返回 None
+        val = self.query(WeatherCommand.GET_PWM, parse_type=int)
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+
+        return round(val / 1023 * 100, 2) if val is not None else None
 
     def set_pwm(self, percent: float) -> bool:
         """Sets the PWM value.
@@ -779,31 +994,42 @@ class CloudSensor(object):
         Returns:
             True if successful, False otherwise.
         """
-        percent = min(100, max(0, int(percent)))
-        percent = int(percent * 1023 / 100)
-        return self.query(WeatherCommand.SET_PWM, cmd_params=f'{percent:04d}')
+        if not self.has_heater: return True # 如果没有加热器，认为设置成功（无操作）
+        percent_val = min(100, max(0, int(percent)))
+        percent_cmd_param = int(percent_val * 1023 / 100)
+        # query 返回 True/False (来自 SET_PWM 的响应通常是握手，这里假设 query 会处理)
+        # 或者 query 返回哨兵
+        result = self.query(WeatherCommand.SET_PWM, cmd_params=f'{percent_cmd_param:04d}')
+        if result is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return bool(result) # 如果不是哨兵，则将其转换为布尔值 (例如，如果 query 返回响应字符串则为 True)
 
 
-    def set_switch(self, percent: str) -> bool:
+    def set_switch(self, command_enum_val: WeatherCommand) -> bool | object: # 参数改为枚举值
         """Sets the PWM value.
 
         Returns:
             True if successful, False otherwise.
         """
-        if percent == WeatherCommand.SET_SWITCH_OPEN or percent == WeatherCommand.SETITCH_CLOSED :
-            return self.query(percent)
-        else:
-            return None
+        # 确保传入的是 G 或 H 命令
+        if command_enum_val not in [WeatherCommand.SET_SWITCH_OPEN, WeatherCommand.SET_SWITCH_CLOSED]:
+            if self._verbose_logging: print(f"[red]无效的 set_switch 命令: {command_enum_val}")
+            return False # 或抛出 ValueError
+
+        result = self.query(command_enum_val) # query 会发送 G! 或 H!
+        if result is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        # 通常 G! H! 只返回握手。如果 query 成功解析握手并返回（例如）True 或响应块，则认为成功
+        return bool(result) # 假设 query 在成功时返回非哨兵的真值
 
     def get_wind_speed(self, skip_averaging: bool = False) -> float | None: # skip_averaging 已存在
         if not self.has_anemometer: return None
-        raw_val = self.query(WeatherCommand.GET_WINDSPEED)
+        raw_val = self.query(WeatherCommand.GET_WINDSPEED) # query 返回 float 或哨兵
+        if raw_val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
         if raw_val is not None:
             try:
                 ws_val = float(raw_val)
                 if ws_val == 0: return 0.0
-                # 假设是新型号风速计
-                return (ws_val * 0.84) + 3.0 # km/h
+                #按照新型号的风速计处理
+                return round((ws_val * 0.84) + 3.0, 2) # km/h
             except (ValueError, TypeError): return None
         return None
 
@@ -812,10 +1038,12 @@ class CloudSensor(object):
         Returns:
             open,close,None.
         """
-        return self.query(WeatherCommand.GET_SWITCH_STATUS) 
+        val = self.query(WeatherCommand.GET_SWITCH_STATUS) # query 返回 "open", "close", None, 或哨兵
+        if val is COMMUNICATION_ERROR_SENTINEL: return COMMUNICATION_ERROR_SENTINEL
+        return val 
 
     def format_reading_for_solo_dict(self, current_reading_dict: dict | None = None) -> dict:
-        # (保持之前的稳健实现)
+         # ... (此方法逻辑保持不变，它基于已传入的 reading 字典进行格式化) ...
         if current_reading_dict is None: current_reading_dict = self.status 
         if not current_reading_dict: 
             if self._verbose_logging: print("[yellow]警告: format_reading_for_solo_dict 中没有可用的当前读数。")
@@ -844,14 +1072,14 @@ class CloudSensor(object):
         sky_t_val = current_reading_dict.get('sky_temp')
         amb_t_val = current_reading_dict.get('ambient_temp')
         if sky_t_val is not None and amb_t_val is not None:
-            try: clouds_val = round(float(sky_t_val) - float(amb_t_val), 3)
+            try: clouds_val = round(float(sky_t_val) - float(amb_t_val), 2)
             except (ValueError, TypeError): pass
 
         temp_val_get = current_reading_dict.get('ambient_temp')
-        temp_val = round(temp_val_get if temp_val_get is not None else 0.0, 3)
+        temp_val = round(temp_val_get if temp_val_get is not None else 0.0, 2)
         
         wind_val_get = current_reading_dict.get('wind_speed')
-        wind_val = round(wind_val_get if wind_val_get is not None else 0.0, 3) 
+        wind_val = round(wind_val_get if wind_val_get is not None else 0.0, 2) 
         
         gust_val = wind_val # 沿用风速值作为阵风值
         
@@ -859,7 +1087,7 @@ class CloudSensor(object):
         rain_val = int(rain_val_get if rain_val_get is not None else 0)
 
         lightmpsas_val_get = current_reading_dict.get('sky_quality_mpsas')
-        lightmpsas_val = round(lightmpsas_val_get if lightmpsas_val_get is not None else 0.0, 3)
+        lightmpsas_val = round(lightmpsas_val_get if lightmpsas_val_get is not None else 0.0, 2)
         
         # Switch: open / close /none
   
@@ -868,25 +1096,25 @@ class CloudSensor(object):
         safe_val = 1 if current_reading_dict.get('is_safe', False) else 0
         
         hum_val_get = current_reading_dict.get('humidity')
-        hum_val = round(hum_val_get if hum_val_get is not None else 0.0, 3)
+        hum_val = round(hum_val_get if hum_val_get is not None else 0.0, 2)
         
         dewp_val_get = current_reading_dict.get('dew_point')
-        dewp_val = round(dewp_val_get if dewp_val_get is not None else 0.0, 3)
+        dewp_val = round(dewp_val_get if dewp_val_get is not None else 0.0, 2)
 
         rawir_val_get = current_reading_dict.get('sky_temp')
-        rawir_val = round(rawir_val_get if rawir_val_get is not None else 0.0, 3)
+        rawir_val = round(rawir_val_get if rawir_val_get is not None else 0.0, 2)
 
         abspress_hpa = 0.0
         abs_p_pa = current_reading_dict.get('pressure')
         if abs_p_pa is not None:
-            try: abspress_hpa = round(float(abs_p_pa) / 100.0, 3)
+            try: abspress_hpa = round(float(abs_p_pa) / 100.0, 2)
             except (ValueError, TypeError): 
                  if self._verbose_logging: print(f"[yellow]警告：无法转换绝对气压值 '{abs_p_pa}' for SOLO")
         
         relpress_hpa = 0.0
         rel_p_pa = current_reading_dict.get('pres_pressure')
         if rel_p_pa is not None:
-            try: relpress_hpa = round(float(rel_p_pa) / 100.0, 3)
+            try: relpress_hpa = round(float(rel_p_pa) / 100.0, 2)
             except (ValueError, TypeError): 
                 if self._verbose_logging: print(f"[yellow]警告：无法转换相对气压值 '{rel_p_pa}' for SOLO")
 
@@ -897,23 +1125,58 @@ class CloudSensor(object):
             "hum": int(hum_val), "dewp": dewp_val, "rawir": rawir_val,
             "abspress": abspress_hpa, "relpress": relpress_hpa
         }
+        
+        # 根据 SOLO 规范，可能还需要一个 error 字段，如果一切正常可以为 0 或 "OK"
+        # solo_data["error"] = 0 # 或者根据实际情况设置
+
         return solo_data
 
-    def query(self, cmd: WeatherCommand, return_codes: bool = False, parse_type: type = float, cmd_params: str = '', verbose: bool = False) -> list | str | float | int | bool | None:
-        # (使用之前讨论的、能处理多块响应的 query 版本)
+    def query(self, cmd: WeatherCommand, return_codes: bool = False, parse_type: type = float, cmd_params: str = '', verbose: bool = False) -> list | str | float | int | bool | None | object:
+        # (能处理多块响应的 query 版本)
         effective_verbose = verbose or self._verbose_logging
-        self.write(cmd, cmd_params=cmd_params) # write 现在不带 *args, **kwargs
-        response_data_parts = self.read(verbose=effective_verbose) # read 现在不带 *args, **kwargs
+
+        try:
+            # 首先检查 _sensor 对象和串口是否已打开，这是进行任何 I/O 的前提
+            if not hasattr(self, '_sensor') or self._sensor is None:
+                self.last_error_message = f"Query ({cmd.name}) 错误: _sensor 对象不存在。"
+                # 这种情况下，状态应该已经是 ERROR 或 INITIALIZING
+                if self._connection_status != ConnectionStatus.ERROR and self._connection_status != ConnectionStatus.INITIALIZING:
+                     self._connection_status = ConnectionStatus.ERROR
+                return COMMUNICATION_ERROR_SENTINEL
+
+            if not self._sensor.is_open:
+                self.last_error_message = f"Query ({cmd.name}) 错误: 串口未打开。"
+                # 如果 connect() 正在调用 query，那么串口应该已经被打开了。
+                # 如果是其他地方调用，且串口意外关闭，则标记为 DISCONNECTED。
+                if self._connection_status == ConnectionStatus.CONNECTED: 
+                    self._connection_status = ConnectionStatus.DISCONNECTED
+                elif self._connection_status != ConnectionStatus.ATTEMPTING_RECONNECT: # 避免在重连尝试中覆盖为ERROR
+                    self._connection_status = ConnectionStatus.ERROR
+                return COMMUNICATION_ERROR_SENTINEL
+
+            self.write(cmd, cmd_params=cmd_params) 
+            response_data_parts = self.read(verbose=effective_verbose) 
+        except SensorCommunicationError as e:
+            # write 或 read 方法内部已经更新了 _connection_status 和 last_error_message
+            if effective_verbose: print(f"[red]Query ({cmd.name}) 失败 (捕获自 write/read): {e}")
+            return COMMUNICATION_ERROR_SENTINEL
+
+        # --- 从这里开始，假设 write 和 read 本身没有抛出 SensorCommunicationError ---
+        # 但 response_data_parts 可能是空列表（如果 read 内部逻辑返回空）
 
         if isinstance(response_data_parts, str): # 如果 read 返回了原始字符串
-            return response_data_parts
+            return response_data_parts #通常不用于常规 query
 
-        if not response_data_parts: # 空列表
-            return None
+        if not response_data_parts: # 空列表，表示没有收到有效数据块
+            if effective_verbose: print(f"[yellow]Query ({cmd.name}): 未收到有效数据块。")
+            # 这不一定是通信中断，可能是设备没有响应特定命令，或者响应格式问题
+            # 但为了安全，如果关键命令无响应，也可能视为一种通信问题
+            # 暂时返回 None，让上层决定如何处理
+            return None 
 
         # 对于预期返回多个数据块的命令 (如 "C!", "D!")
         if cmd in [WeatherCommand.GET_VALUES, WeatherCommand.GET_INTERNAL_ERRORS]:
-            return response_data_parts 
+            return response_data_parts  # 这些命令预期返回列表
 
         # 对于预期返回单个数据块/值的命令
         if len(response_data_parts) == 1:
@@ -939,6 +1202,8 @@ class CloudSensor(object):
                     return 'Y' in value_str.upper() # value_str here is "Y" or "N" (after strip)
 
                 try:
+                    if parse_type is bool: # 特殊处理布尔型，通常基于字符串内容
+                        return value_str.upper() == 'TRUE' or value_str.upper() == 'Y' # 示例
                     return parse_type(value_str)
                 except (ValueError, TypeError):
                     if effective_verbose: print(f"[yellow]无法将 '{value_str}' 解析为 {parse_type} (命令: {cmd.name})")
@@ -946,39 +1211,79 @@ class CloudSensor(object):
         
         if effective_verbose: print(f"[yellow]命令 {cmd.name} 预期单个数据块，但收到多个: {response_data_parts}。将尝试返回第一个。")
         if response_data_parts: # 尝试返回第一个块的值作为备用
-            try: return parse_type(response_data_parts[0][2:].strip())
+            try: 
+                first_val_str = response_data_parts[0][2:].strip()
+                if parse_type is bool: return first_val_str.upper() == 'TRUE' or first_val_str.upper() == 'Y'
+                return parse_type(first_val_str)
             except: return response_data_parts[0][2:].strip()
-        return None
+
+        return None # 如果所有情况都不匹配，返回 None
 
     def write(self, cmd: WeatherCommand, cmd_params: str = '', cmd_delim: str = '!') -> int:
-        # (使用之前讨论的 write 版本)
+        # 
         full_cmd = f'{cmd.value}{cmd_params}{cmd_delim}'
+
+        if not hasattr(self, '_sensor') or self._sensor is None: # 检查 _sensor 是否存在
+            self.last_error_message = "写入错误: _sensor 对象不存在。"
+            self._connection_status = ConnectionStatus.ERROR
+            raise SensorCommunicationError(self.last_error_message)
+
+
         if not self._sensor.is_open:
             try:
-                self._sensor.open()
-                time.sleep(0.05) # 短暂延时确保端口准备好
-            except serial.SerialException as e:
-                if self._verbose_logging: print(f"[red]写入前打开串口失败: {e}")
-                return 0
+                if self._verbose_logging: print("[grey]写入前串口未打开，尝试打开...")
+                # 不应该在 write 中自动打开，连接管理应由 connect() 负责
+                # 如果到这里串口还未打开，说明连接已断开或从未成功
+                self.last_error_message = f"写入命令 '{full_cmd}' 失败：串口未打开。"
+                self._connection_status = ConnectionStatus.DISCONNECTED # 或 ERROR
+                raise SensorCommunicationError(self.last_error_message)
+            except serial.SerialException as e: # self._sensor.open() 可能抛出
+                self.last_error_message = f"写入前重新打开串口失败: {e}"
+                self._connection_status = ConnectionStatus.ERROR
+                raise SensorCommunicationError(self.last_error_message) from e
         try:
             self._sensor.reset_input_buffer()
             self._sensor.reset_output_buffer()
             num_bytes = self._sensor.write(full_cmd.encode())
-            self._sensor.flush() # 确保数据已发送
+            self._sensor.flush()
             return num_bytes
         except serial.SerialException as e:
-            if self._verbose_logging: print(f"[red]写入命令 '{full_cmd}' 到串口时发生错误: {e}")
-            return 0
+            self.last_error_message = f"写入命令 '{full_cmd}' 到串口时发生错误: {e}"
+            self._connection_status = ConnectionStatus.ERROR # 标记为错误
+            if self._verbose_logging: print(f"[red]{self.last_error_message}")
+            raise SensorCommunicationError(self.last_error_message) from e
+        except Exception as e: # 其他意外错误
+            self.last_error_message = f"写入时发生意外错误 ({cmd.name}): {e}"
+            self._connection_status = ConnectionStatus.ERROR
+            if self._verbose_logging: print(f"[red]{self.last_error_message}")
+            raise SensorCommunicationError(self.last_error_message) from e
+
 
     def read(self, return_raw: bool = False, verbose: bool = False) -> list | str:
-        # (使用之前讨论的、能处理多块响应的 read 版本)
+        # (能处理多块响应的 read 版本)
         effective_verbose = verbose or self._verbose_logging
+        if not hasattr(self, '_sensor') or self._sensor is None:
+            self.last_error_message = "读取错误: _sensor 对象不存在。"
+            self._connection_status = ConnectionStatus.ERROR
+            raise SensorCommunicationError(self.last_error_message)
+
         if not self._sensor.is_open:
-            if effective_verbose: print("[red]读取错误: 串口未打开。")
-            return [] if not return_raw else ""
+            self.last_error_message = "读取错误: 串口未打开。"
+            # 状态可能已是 DISCONNECTED 或 ERROR，这里再次确认
+            if self._connection_status == ConnectionStatus.CONNECTED: # 如果之前认为是连接的，现在发现串口关闭
+                self._connection_status = ConnectionStatus.DISCONNECTED
+            else:
+                self._connection_status = ConnectionStatus.ERROR    
+            if effective_verbose: print(f"[red]{self.last_error_message}")
+            raise SensorCommunicationError(self.last_error_message)
         
         full_response_decoded = ""
         all_data_blocks_content = [] # 存储 "XXyyyyyyyyyyyy" 格式的块内容
+
+        # Read until the specific handshake sequence is found at the end of a 15-byte block
+        # The full handshake block is "!<XON><12 spaces>0"
+        buffer = b''
+        full_handshake_bytes = b"!" + self.handshake_block_content.encode()
 
         try:
             # 循环读取，直到遇到完整的握手块或超时
@@ -995,44 +1300,65 @@ class CloudSensor(object):
             
             # Wait briefly for data to arrive after a write
             time.sleep(0.2) # Adjust as needed; depends on device response time
-            
-            buffer = b''
-            # Read until the specific handshake sequence is found at the end of a 15-byte block
-            # The full handshake block is "!<XON><12 spaces>0"
-            full_handshake_bytes = b"!" + self.handshake_block_content.encode()
 
             # Read in a loop until handshake is detected or timeout occurs (implicit via serial timeout)
-            max_attempts = 10 # Try to read a few times to assemble the full response
-            for _ in range(max_attempts):
-                if self._sensor.in_waiting > 0:
-                    buffer += self._sensor.read(self._sensor.in_waiting)
-                
-                # Check if the complete handshake is at the end of the buffer
-                if buffer.endswith(full_handshake_bytes):
-                    break
-                time.sleep(0.05) # Small delay before checking again
+            # 循环读取，直到找到握手或没有更多数据（超时）
+            # max_attempts = 10 # 限制尝试次数，防止意外的无限循环
+            # for _ in range(max_attempts):
+            #     bytes_in_waiting = self._sensor.in_waiting
+            #     if bytes_in_waiting > 0:
+            #         buffer += self._sensor.read(bytes_in_waiting)
+            #     else: # 没有数据了，或者第一次就没数据
+            #         if not buffer: # 如果缓冲区为空且没读到数据，可能是超时
+            #             break 
+            #     # 检查是否已包含完整握手
+            #     if full_handshake_bytes in buffer: # 改为检查是否包含，而不仅仅是结尾
+            #         break
+            #     time.sleep(0.05) # 短暂延时再次检查
+
+            # 使用 read_until，但需要确保它能正确处理
+
+            try:
+                buffer = self._sensor.read_until(expected=full_handshake_bytes)
+            except serial.SerialTimeoutException: # 虽然 timeout 在 open 时设置，但 read_until 也可能触发
+                if effective_verbose: print(f"[yellow]读取时发生串口超时 (read_until)。")
+                # buffer 中可能已有部分数据
             
+            if not buffer and self._sensor.in_waiting > 0: 
+                 if effective_verbose: print(f"[grey]read_until 返回空但 in_waiting ({self._sensor.in_waiting}) > 0, 尝试直接读取...")
+                 buffer += self._sensor.read(self._sensor.in_waiting) 
+
             full_response_decoded = buffer.decode(errors='ignore')
 
-            if effective_verbose:
-                print(f'读取的原始响应 (解码后): {full_response_decoded!r}')
+            if effective_verbose: print(f'读取的原始响应 (解码后): {full_response_decoded!r}')
 
             if return_raw:
                 return full_response_decoded
 
             if full_response_decoded:
-                # 移除末尾的握手块 (包括 '!')
+                # 必须以完整的握手结束才认为是有效响应
+                if not full_response_decoded.endswith(full_handshake_bytes.decode(errors='ignore')):
+                    if effective_verbose: print(f"[yellow]响应未以预期的握手结束: {full_response_decoded!r}")
+                    # 这可能表示不完整的响应或通信错误
+                    # 根据严格程度，这里可以抛出 SensorCommunicationError 或返回空
+                    # 为了更健壮，如果部分数据存在，我们尝试解析，但标记可能不完整
+                    # 但如果连握手都没有，很可能是严重错误
+                    self.last_error_message = "响应未以预期握手结束。"
+                    # 不立即改变状态，让 query 的调用者决定
+                    return [] # 返回空列表表示没有可解析的完整数据块
+
                 data_to_parse = full_response_decoded
-                if data_to_parse.endswith(full_handshake_bytes.decode(errors='ignore')):
-                    data_to_parse = data_to_parse[:-len(full_handshake_bytes)]
+                # 移除末尾的握手块 (包括 '!')
+                data_to_parse = data_to_parse[:-len(full_handshake_bytes)]
                 
                 idx = 0
                 while (idx + 15) <= len(data_to_parse):
                     block = data_to_parse[idx:idx + 15]
                     if not block.startswith('!'):
                         if effective_verbose: print(f"[yellow]预期数据块以 '!' 开始，但得到: {block!r}")
+                        # 如果数据块格式错误，后续解析可能无意义
                         break 
-                    all_data_blocks_content.append(block[1:]) # 存储 "XXyyyyyyyyyyyy"
+                    all_data_blocks_content.append(block[1:])
                     idx += 15
                 
                 if idx < len(data_to_parse) and effective_verbose:
@@ -1041,19 +1367,23 @@ class CloudSensor(object):
             return all_data_blocks_content
 
         except serial.SerialException as e:
-            if effective_verbose: print(f"[red]串口读取错误: {e}")
-            return [] if not return_raw else ""
-        except Exception as e:
-            if effective_verbose: print(f"[red]读取或解析传感器响应时发生意外错误: {e}")
-            return [] if not return_raw else ""
+            self.last_error_message = f"串口读取错误: {e}"
+            self._connection_status = ConnectionStatus.ERROR
+            if effective_verbose: print(f"[red]{self.last_error_message}")
+            raise SensorCommunicationError(self.last_error_message) from e
+        except Exception as e: # 其他意外错误
+            self.last_error_message = f"读取或解析传感器响应时发生意外错误: {e}"
+            self._connection_status = ConnectionStatus.ERROR
+            if effective_verbose: print(f"[red]{self.last_error_message}")
+            raise SensorCommunicationError(self.last_error_message) from e
 
     def __str__(self):
-        return f'CloudSensor({self.name}, FW={self.firmware}, SN={self.serial_number}, port={self.config.serial_port})'
+        return f'CloudSensor({self.name}, FW={self.firmware}, SN={self.serial_number}, Port={self.config.serial_port}, Status={self._connection_status.value})'
 
     def __del__(self):
         if hasattr(self, '_sensor') and self._sensor and self._sensor.is_open:
             if self._verbose_logging: print('[grey]CloudSensor 对象销毁，关闭串口连接...')
             try:
                 self._sensor.close()
-            except Exception as e:
+            except Exception as e: # pylint: disable=broad-except
                 if self._verbose_logging: print(f"[red]关闭串口时发生错误: {e}")

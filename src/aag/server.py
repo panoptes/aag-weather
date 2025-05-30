@@ -1,10 +1,13 @@
+print("--- SERVER.PY VERSION CHECK: v5.0 - FINAL CHECK MAY 29 ---") # <--- 使用一个全新的标记!
 import json # 导入 json 模块
+import asyncio # 导入 asyncio
 from pathlib import Path # 导入 Path 模块
 from typing import Optional, Any, List as PyList # Renamed List to PyList to avoid conflict with Pydantic
 from datetime import datetime, timezone # 导入 timezone
 from fastapi import FastAPI, HTTPException # 导入 HTTPException
-from fastapi_utils.tasks import repeat_every
+#from fastapi_utils.tasks import repeat_every
 from pydantic import BaseModel # For new /state response model
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError # 导入 zoneinfo
 
 # 从 aag.weather 导入增强后的 CloudSensor 和新的 ConnectionStatus 枚举
 from aag.weather import CloudSensor, ConnectionStatus, SensorCommunicationError  # 假设 CloudSensor 在 aag.weather 中
@@ -38,145 +41,199 @@ class SensorStateResponse(BaseModel):
     serial_port: Optional[str] = None
     firmware_version: Optional[str] = None
     serial_number: Optional[str] = None
-    last_successful_reading_at_utc: Optional[datetime] = None
+    last_successful_reading_at: Optional[datetime] = None 
     last_error_message: Optional[str] = None
-    last_connection_attempt_at_utc: Optional[datetime] = None
-    current_server_time_utc: datetime
-    capture_delay_seconds: Optional[float] = None
+    last_connection_attempt_at: Optional[datetime] = None 
+    current_server_time: datetime 
+    capture_delay_seconds: Optional[float] = None 
     readings_buffer_size: Optional[int] = None
     readings_in_buffer: Optional[int] = None
 
-@app.on_event('startup')
-def init_sensor():
+# 这个函数不再是启动事件，只是一个普通的初始化函数
+def do_init_sensor():
     global sensor
-    print("[cyan]Initializing CloudSensor...")
+    if sensor is None:
+        print("[cyan]Attempting to initialize CloudSensor for the first time or after a previous failure...")
+    else:
+        print("[cyan]Attempting to re-initialize existing CloudSensor object (unexpected)...")
+
     try:
-        # CloudSensor.__init__ 调用 self.connect(raise_exceptions=True)
-        # 如果失败，会抛出 SensorCommunicationError
         sensor = CloudSensor(connect=True) 
-        if sensor.is_connected: # is_connected 现在基于 ConnectionStatus.CONNECTED
+        if sensor.is_connected: 
             print(f"[green]CloudSensor initialized and connected successfully. Status: {sensor.connection_status.value}")
         else:
-            # 理论上，如果 connect=True 且失败，__init__ 会抛异常，不会到这里。
-            # 但为保险起见，记录一下。
-            # CloudSensor 的 __init__ 在 connect=True 且失败时会抛出 SensorCommunicationError
-            # 所以这里的 else 分支通常不会被执行，除非 CloudSensor 的 __init__ 逻辑改变
-            print(f"[red]CloudSensor initialization finished but sensor not connected. Status: {sensor.connection_status.value if sensor else 'N/A'}, Error: {sensor.last_error_message if sensor else 'Sensor object is None'}")
-    except SensorCommunicationError as e: # 捕获来自 CloudSensor 的特定初始化错误
-        print(f"[red]Critical SensorCommunicationError during CloudSensor initialization: {e}")
-        sensor = None # 确保 sensor 为 None
+            print(f"[red]CloudSensor initialization finished but sensor not connected. Status: {sensor.connection_status.value if sensor else 'N/A'}, Error: {sensor.last_error_message if sensor else 'Sensor object is None during init else clause'}")
+            sensor = None 
+    except SensorCommunicationError as e: 
+        print(f"[red]SensorCommunicationError during CloudSensor initialization: {e}")
+        sensor = None 
     except Exception as e:
         print(f"[red]Unexpected critical error during CloudSensor initialization: {e}")
         import traceback
         traceback.print_exc()
-        sensor = None # 确保 sensor 为 None
+        sensor = None 
 
 
-@app.on_event('startup')
-@repeat_every(seconds=PERIODIC_TASK_INTERVAL_SECONDS, wait_first=True) # wait_first=True 表示启动时会立即执行一次
-def periodic_sensor_reading_task():
-    global sensor
-    current_time_utc = datetime.now(timezone.utc)
-    verbose_logging_enabled = False # 默认关闭，除非从 sensor.config 获取
 
-    if sensor is None:
-        print(f"[{current_time_utc.isoformat()}] server.py: Sensor object not initialized. Skipping periodic reading.")
-        # 可以在这里尝试重新初始化，但这可能导致无限循环，如果初始化持续失败
-        # init_sensor() # 谨慎使用，或添加重试次数限制
-        return
+#@app.on_event('startup')
+#@repeat_every(seconds=PERIODIC_TASK_INTERVAL_SECONDS, wait_first=True) # wait_first=True 表示启动时会立即执行一次
+async def periodic_sensor_reading_task():
+    """一个无限循环的后台任务，用于周期性地读取传感器数据。"""
+    print("--- Background task `periodic_sensor_reading_task` has started. ---")
+    while True:
+        current_time_utc_for_log = datetime.now(timezone.utc)
+        print(f"DEBUG: periodic_sensor_reading_task loop entered at {current_time_utc_for_log.isoformat()}")
 
-    # 从 sensor.config 获取 verbose_logging 设置
-    # 需要确保 sensor 对象存在才能访问其 config
-    if hasattr(sensor, 'config') and sensor.config is not None:
-        verbose_logging_enabled = getattr(sensor.config, 'verbose_logging', False)
-    else: # 如果 sensor 对象存在但没有 config (理论上不太可能，除非 CloudSensor 构造不完整)
-        if verbose_logging_enabled: # 使用上面定义的默认值
-             print(f"[{current_time_utc.isoformat()}] server.py: Warning - sensor.config not found, using default verbose_logging ({verbose_logging_enabled})")
+        global sensor
+        verbose_logging_enabled = False 
 
-
-    # 检查连接状态，如果未连接则尝试重连
-    if sensor.connection_status != ConnectionStatus.CONNECTED:
-        # 只有在状态不是 ATTEMPTING_RECONNECT 时才打印“尝试重连”，避免重复日志
-        if sensor.connection_status != ConnectionStatus.ATTEMPTING_RECONNECT:
-            print(f"[{current_time_utc.isoformat()}] server.py: Sensor not connected (Status: {sensor.connection_status.value}, LastError: {sensor.last_error_message}). Attempting to reconnect...")
-        
-        reconnected = sensor.connect(raise_exceptions=False) # 在周期任务中不应抛出致命异常
-        
-        if reconnected:
-            print(f"[{datetime.now(timezone.utc).isoformat()}] server.py: Sensor reconnected successfully. Status: {sensor.connection_status.value}")
-        else:
-            # connect 方法内部会更新 last_error_message 和 connection_status
-            if verbose_logging_enabled or sensor.connection_status != ConnectionStatus.ATTEMPTING_RECONNECT : # 避免在快速重试时过多日志
-                print(f"[{datetime.now(timezone.utc).isoformat()}] server.py: Sensor reconnection failed. Status: {sensor.connection_status.value}, Error: {sensor.last_error_message}")
-            return # 重连失败，则本次不尝试读取
-
-    # 如果传感器已连接 (或刚刚重连成功)
-    if sensor.connection_status == ConnectionStatus.CONNECTED:
-        if verbose_logging_enabled:
-            print(f"[{current_time_utc.isoformat()}] server.py: >>> Sensor connected. Calling sensor.get_reading()...")
-        
-        start_time = datetime.now(timezone.utc)
-        try:
-            # get_reading 现在返回 None 如果当次读取因通信问题失败 (并且不会更新 sensor.readings)
-            new_reading_data = sensor.get_reading(avg_times=1, units='none', verbose=verbose_logging_enabled)
-            end_time = datetime.now(timezone.utc)
-            duration = (end_time - start_time).total_seconds()
-
-            if new_reading_data is not None:
-                if verbose_logging_enabled:
-                    print(f"[{end_time.isoformat()}] server.py: <<< sensor.get_reading() successful in {duration:.2f} seconds.")
-                
-                # --- SOLO 文件写入逻辑 ---
-                if hasattr(sensor.config, 'solo_data_file_path') and sensor.config.solo_data_file_path:
-                    try:
-                        solo_output_dict = sensor.format_reading_for_solo_dict(new_reading_data) 
-                        output_path = Path(sensor.config.solo_data_file_path)
-                        output_path.parent.mkdir(parents=True, exist_ok=True)
-                        temp_file_path = output_path.with_suffix(output_path.suffix + '.tmp')
-                        with open(temp_file_path, 'w', encoding='utf-8') as f:
-                            json.dump(solo_output_dict, f, indent=None, separators=(',', ':'))
-                        temp_file_path.replace(output_path)
-                        if verbose_logging_enabled:
-                            print(f"[{datetime.now(timezone.utc).isoformat()}] server.py: SOLO format data successfully written to {output_path}")
-                    except Exception as e_solo:
-                        print(f"[red][{datetime.now(timezone.utc).isoformat()}] server.py: Error writing SOLO data: {e_solo}")
+        if sensor is None:
+            print(f"[{current_time_utc_for_log.isoformat()}] server.py: Sensor object is None. Attempting to re-initialize...")
+            do_init_sensor() 
+            if sensor is None: 
+                print(f"[{datetime.now(timezone.utc).isoformat()}] server.py: Sensor re-initialization failed. Waiting for next cycle.")
+                await asyncio.sleep(PERIODIC_TASK_INTERVAL_SECONDS)
+                continue # 继续下一次循环
             else:
-                # get_reading 返回 None，表示本次读取无效
-                # CloudSensor.get_reading() 内部已更新状态并可能记录错误
-                if verbose_logging_enabled:
-                    print(f"[{end_time.isoformat()}] server.py: <<< sensor.get_reading() returned None (no valid data obtained this cycle). Duration: {duration:.2f}s. Sensor Status: {sensor.connection_status.value}, Last Error: {sensor.last_error_message}")
+                print(f"[{datetime.now(timezone.utc).isoformat()}] server.py: Sensor re-initialized. Current status: {sensor.connection_status.value}")
 
-        except Exception as e_get_reading: 
-            end_time = datetime.now(timezone.utc)
-            duration = (end_time - start_time).total_seconds()
-            print(f"[red][{end_time.isoformat()}] server.py: !!! Unexpected error during sensor.get_reading() call after {duration:.2f} seconds: {e_get_reading}")
-            import traceback
-            traceback.print_exc()
-            # 这种意外错误可能需要将传感器状态标记为 ERROR
-            if sensor: # 确保 sensor 对象存在
-                 sensor._connection_status = ConnectionStatus.ERROR # 直接访问内部状态（或者添加一个方法）
-                 sensor.last_error_message = f"Unexpected error in get_reading task: {e_get_reading}"
+        if hasattr(sensor, 'config') and sensor.config is not None:
+            verbose_logging_enabled = getattr(sensor.config, 'verbose_logging', False)
 
-# 新增：/state API 端点
-@app.get('/state', response_model=SensorStateResponse, summary="获取传感器和服务的当前状态")
+        if sensor.connection_status != ConnectionStatus.CONNECTED:
+            if sensor.connection_status != ConnectionStatus.ATTEMPTING_RECONNECT:
+                if verbose_logging_enabled: 
+                    print(
+                        f"[{current_time_utc_for_log.isoformat()}] server.py: Sensor not connected.\n"
+                        f"    - Status: {sensor.connection_status.value}\n"
+                        f"    - LastError: {sensor.last_error_message}\n"
+                        f"    - Attempting to reconnect..."
+                    )
+       
+            reconnected = sensor.connect(raise_exceptions=False) 
+            
+            if verbose_logging_enabled:
+                print(f"DEBUG SERVER: sensor.connect() call returned: {reconnected}. New sensor status: {sensor.connection_status.value}")
+            
+            if not reconnected:
+                if verbose_logging_enabled or sensor.connection_status != ConnectionStatus.ATTEMPTING_RECONNECT : 
+                    print(f"[{datetime.now(timezone.utc).isoformat()}] server.py: Sensor reconnection failed. Status: {sensor.connection_status.value}, Error: {sensor.last_error_message}")
+                await asyncio.sleep(PERIODIC_TASK_INTERVAL_SECONDS)
+                continue # 重连失败，继续下一次循环
+
+        # 如果到这里，传感器应该是已连接状态
+        if sensor.connection_status == ConnectionStatus.CONNECTED:
+            if verbose_logging_enabled:
+                print(f"[{current_time_utc_for_log.isoformat()}] server.py: >>> Sensor connected. Calling sensor.get_reading()...")
+            
+            #计算耗时用
+            start_time = datetime.now(timezone.utc)
+            
+            try:
+                new_reading_data = sensor.get_reading(avg_times=1, units='none', verbose=verbose_logging_enabled)
+                
+                end_time = datetime.now(timezone.utc)
+                duration = (end_time - start_time).total_seconds()
+                
+                if new_reading_data is not None:
+                    if verbose_logging_enabled:
+                        print(f"[{end_time.isoformat()}] server.py: <<< sensor.get_reading() successful in {duration:.2f} seconds.")
+                    
+                    if hasattr(sensor.config, 'solo_data_file_path') and sensor.config.solo_data_file_path:
+                        # (SOLO文件写入逻辑保持不变)
+                        try:
+                            solo_output_dict = sensor.format_reading_for_solo_dict(new_reading_data) 
+                            output_path = Path(sensor.config.solo_data_file_path)
+                            output_path.parent.mkdir(parents=True, exist_ok=True)
+                            temp_file_path = output_path.with_suffix(output_path.suffix + '.tmp')
+                            with open(temp_file_path, 'w', encoding='utf-8') as f:
+                                json.dump(solo_output_dict, f, indent=None, separators=(',', ':'))
+                            temp_file_path.replace(output_path)
+                            if verbose_logging_enabled:
+                                print(f"[{datetime.now(timezone.utc).isoformat()}] server.py: SOLO format data successfully written to {output_path}")
+                        except Exception as e_solo:
+                            print(f"[red][{datetime.now(timezone.utc).isoformat()}] server.py: Error writing SOLO data: {e_solo}")
+                else:
+                    if verbose_logging_enabled:
+                        print(
+                            f"[{datetime.now(timezone.utc).isoformat()}] server.py: <<< sensor.get_reading() returned None (no valid data obtained this cycle).\n"
+                            f"    - Duration: {duration:.2f} seconds.\n" # 添加耗时
+                            f"    - Sensor Status: {sensor.connection_status.value}\n"
+                            f"    - Last Error: {sensor.last_error_message}"
+                        )
+
+            except Exception as e_get_reading: 
+                end_time = datetime.now(timezone.utc)
+                duration = (end_time - start_time).total_seconds()
+                print(
+                    f"[red][{end_time.isoformat()}] server.py: !!! Unexpected error during sensor.get_reading() call after {duration:.2f} seconds.\n"
+                    f"    - Error: {e_get_reading}[/red]"
+                )
+                import traceback
+                traceback.print_exc()
+                if sensor: 
+                     sensor._connection_status = ConnectionStatus.ERROR 
+                     sensor.last_error_message = f"Unexpected error in get_reading task: {e_get_reading}"
+        
+        # 等待下一个周期
+        await asyncio.sleep(PERIODIC_TASK_INTERVAL_SECONDS)
+
+# --- 新增：新的启动事件，负责初始化和启动后台任务 ---
+@app.on_event("startup")
+async def startup_event():
+    """在应用启动时执行。"""
+    print("Application startup event triggered.")
+    do_init_sensor() # 首先执行同步的初始化函数
+    print("Background task scheduling...")
+    asyncio.create_task(periodic_sensor_reading_task()) # 创建并启动后台任务
+    print("Background task scheduled.")
+
+
+# weather/state API 端点
+@app.get('/weather/state', response_model=SensorStateResponse, summary="获取传感器和服务的当前状态")
 def get_sensor_state():
     global sensor
-    current_time = datetime.now(timezone.utc)
+    local_tz = timezone.utc 
+    if sensor and hasattr(sensor, 'config') and sensor.config and hasattr(sensor.config, 'location') and sensor.config.location:
+        try:
+            local_tz = ZoneInfo(sensor.config.location.timezone)
+        except ZoneInfoNotFoundError:
+            if sensor and getattr(sensor, '_verbose_logging', False): 
+                print(f"[yellow]Warning: Configured timezone '{sensor.config.location.timezone}' for /state endpoint not found. Falling back to UTC.[/yellow]")
+        except Exception as tz_err:
+            if sensor and getattr(sensor, '_verbose_logging', False):
+                print(f"[red]Error setting timezone for /state endpoint: {tz_err}. Falling back to UTC.[/red]")
+
+    current_server_time_local = datetime.now(local_tz)
 
     if sensor is None:
         return SensorStateResponse(
             service_status="NOT_INITIALIZED", 
             last_error_message="Sensor object is None. Service might be starting or failed to initialize.",
-            current_server_time_utc=current_time
+            current_server_time=current_server_time_local 
         )
 
     # 确保 sensor.config 存在
-    capture_delay = None
+    capture_delay_val = None 
     serial_p = None
     if hasattr(sensor, 'config') and sensor.config is not None:
-        capture_delay = getattr(sensor.config, 'capture_delay', None)
+        capture_delay_val = getattr(sensor.config, 'capture_delay', None)
         serial_p = getattr(sensor.config, 'serial_port', None)
 
+    last_successful_reading_local = None
+    if sensor.last_successful_read_timestamp: 
+        try:
+            last_successful_reading_local = sensor.last_successful_read_timestamp.astimezone(local_tz)
+        except Exception as e_tz_conv_succ:
+             if getattr(sensor, '_verbose_logging', False): print(f"[red]Error converting last_successful_read_timestamp to local_tz: {e_tz_conv_succ}")
+
+
+    last_connection_attempt_local = None
+    if sensor.last_connection_attempt_timestamp: 
+        try:
+            last_connection_attempt_local = sensor.last_connection_attempt_timestamp.astimezone(local_tz)
+        except Exception as e_tz_conv_att:
+            if getattr(sensor, '_verbose_logging', False): print(f"[red]Error converting last_connection_attempt_timestamp to local_tz: {e_tz_conv_att}")
 
     return SensorStateResponse(
         service_status=sensor.connection_status.value,
@@ -184,11 +241,11 @@ def get_sensor_state():
         serial_port=serial_p,
         firmware_version=sensor.firmware,
         serial_number=sensor.serial_number,
-        last_successful_reading_at_utc=sensor.last_successful_read_timestamp,
+        last_successful_reading_at=last_successful_reading_local, 
         last_error_message=sensor.last_error_message,
-        last_connection_attempt_at_utc=sensor.last_connection_attempt_timestamp,
-        current_server_time_utc=current_time,
-        capture_delay_seconds=capture_delay,
+        last_connection_attempt_at=last_connection_attempt_local, 
+        current_server_time=current_server_time_local, 
+        capture_delay_seconds=capture_delay_val, 
         readings_buffer_size=sensor.readings.maxlen if hasattr(sensor, 'readings') and sensor.readings else None,
         readings_in_buffer=len(sensor.readings) if hasattr(sensor, 'readings') and sensor.readings else 0
     )

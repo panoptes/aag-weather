@@ -3,6 +3,7 @@ import time
 from datetime import datetime,timezone
 import math # 导入 math 模块
 from enum import Enum # 导入 Enum
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError # 导入 zoneinfo 用于时区
 
 import serial
 from collections.abc import Callable
@@ -40,9 +41,7 @@ class CloudSensor(object):
             connect: Whether to connect to the sensor on init.
             **kwargs: Keyword arguments for the WeatherSettings class.
         """
-        # --- 新增诊断代码 ---
-        if kwargs.get('verbose_logging', False) or getattr(WeatherSettings(verbose_logging=True if 'verbose_logging' not in kwargs else kwargs['verbose_logging']), 'verbose_logging', False): # Attempt to get verbose_logging early
-            print(f"DEBUG: CloudSensor.__init__ called with connect={connect}, kwargs={kwargs}")
+
         try:
             # --- 修改：增加详细错误捕获 ---
             if 'verbose_logging' in kwargs: # 如果 kwargs 中有 verbose_logging，优先使用它
@@ -58,8 +57,6 @@ class CloudSensor(object):
 
             self._verbose_logging = temp_verbose_setting # 在 self.config 赋值前设置
 
-            if self._verbose_logging:
-                print(f"DEBUG: Attempting to initialize WeatherSettings with kwargs: {kwargs}")
             try:
                 self.config = WeatherSettings(**kwargs)
             except Exception as e_settings:
@@ -254,7 +251,7 @@ class CloudSensor(object):
                     raise SensorCommunicationError(self.last_error_message) from e
                 else:
                     raise # 重新抛出已包装的 SensorCommunicationError
-            return Falsed
+            return False
 
     def capture(self, callback: Callable | None = None, units: WhichUnits = 'none', verbose: bool = False) -> None:
         """连续捕获读数。"""
@@ -349,20 +346,41 @@ class CloudSensor(object):
                 if communication_error_occured_this_cycle: # 检查循环内部是否发生错误
                     return COMMUNICATION_ERROR_SENTINEL
 
-
             if not values:
                 if current_verbose: print(f"[yellow]警告: {fn_to_avg.__name__} 的所有 {n} 次读数均无效或为 None。")
                 return None
             return round(sum(values) / len(values), 2)
 
+        # --- 使用配置的时区生成时间戳 ---
+        try:
+            # 使用配置中定义的时区
+            local_tz = ZoneInfo(self.config.location.timezone)
+        except ZoneInfoNotFoundError:
+            # 如果配置的时区字符串无效，打印警告并回退到UTC
+            if self._verbose_logging:
+                print(f"[yellow]Warning: Configured timezone '{self.config.location.timezone}' not found. Falling back to UTC.[/yellow]")
+            local_tz = timezone.utc
+        except Exception as tz_err:
+            # 捕获其他可能的时区错误
+            if self._verbose_logging:
+                print(f"[red]Error setting timezone: {tz_err}. Falling back to UTC.[/red]")
+            local_tz = timezone.utc
+
+        timestamp_iso_str = datetime.now(local_tz).isoformat()
 
         # --- 开始获取读数 ---
         # C! 命令获取的值，如果失败，则整个读数周期失败
         c_command_data_val = self.get_rain_sensor_values()
-        if c_command_data_val is COMMUNICATION_ERROR_SENTINEL:
-            if current_verbose: print("[red]get_reading 中断：获取 C! 命令数据失败。")
-            # self._connection_status 和 self.last_error_message 已在 query/read/write 中更新
-            return None # 表示本次 get_reading 失败
+        #更严格地处理 c_command_data_val
+        if c_command_data_val is COMMUNICATION_ERROR_SENTINEL or c_command_data_val is None:
+            # 如果是哨兵，错误已在底层设置。如果是 None，说明 query 返回 None (read 返回空列表)
+            if c_command_data_val is None and self._connection_status == ConnectionStatus.CONNECTED: # 仅当之前认为是连接的时才更新状态
+                self.last_error_message = "获取 C! 命令数据失败 (未收到有效数据块)。"
+                self._connection_status = ConnectionStatus.ERROR # 视为错误
+                if current_verbose: print(f"[red]{self.last_error_message}")
+            elif current_verbose and c_command_data_val is COMMUNICATION_ERROR_SENTINEL:
+                 print(f"[red]get_reading 中断：获取 C! 命令数据因通信错误失败。({self.last_error_message})")
+            return None 
         
         # 确保 c_command_data_val 是字典，即使 query 成功但解析部分失败也可能返回空字典
         c_command_data = c_command_data_val if isinstance(c_command_data_val, dict) else {}   
@@ -393,8 +411,7 @@ class CloudSensor(object):
             return None # 本次读数无效
 
         # --- 后续计算基于已获取的值 ---
-        # (如果上面任何一个值是 None 但不是哨兵，计算会继续，结果可能是 None)
-        final_reading_dict = {'timestamp': datetime.now(timezone.utc).isoformat()}
+        final_reading_dict = {'timestamp': timestamp_iso_str}
         final_reading_dict.update(reading_values)
 
         # 环境温度直接取RH传感器温度  根据文档，RH温度传感器更加准确。
@@ -1156,17 +1173,33 @@ class CloudSensor(object):
 
             self.write(cmd, cmd_params=cmd_params) 
             response_data_parts = self.read(verbose=effective_verbose) 
+
         except SensorCommunicationError as e:
             # write 或 read 方法内部已经更新了 _connection_status 和 last_error_message
             if effective_verbose: print(f"[red]Query ({cmd.name}) 失败 (捕获自 write/read): {e}")
             return COMMUNICATION_ERROR_SENTINEL
 
-        # --- 从这里开始，假设 write 和 read 本身没有抛出 SensorCommunicationError ---
-        # 但 response_data_parts 可能是空列表（如果 read 内部逻辑返回空）
+        #增加对 response_data_parts 类型的严格检查 ---    
+        if response_data_parts is COMMUNICATION_ERROR_SENTINEL: 
+             if effective_verbose: print(f"[red]Query ({cmd.name}) 失败，read 方法返回通信错误哨兵。")
+             return COMMUNICATION_ERROR_SENTINEL
 
         if isinstance(response_data_parts, str): # 如果 read 返回了原始字符串
             return response_data_parts #通常不用于常规 query
 
+        # 期望 read() 在成功时返回列表，如果不是列表（且不是哨兵或字符串），则视为错误
+        if not isinstance(response_data_parts, list):
+            if effective_verbose: print(f"[red]Query ({cmd.name}) 失败，read 方法返回了意外的类型: {type(response_data_parts)}。")
+            self.last_error_message = f"Query ({cmd.name}) 内部错误: read返回意外类型 {type(response_data_parts)}"
+            # 只有在之前状态是 CONNECTED 时才更新为 ERROR，避免在重连尝试中过早标记
+            if self._connection_status == ConnectionStatus.CONNECTED:
+                self._connection_status = ConnectionStatus.ERROR
+            elif self._connection_status == ConnectionStatus.ATTEMPTING_RECONNECT:
+                self._connection_status = ConnectionStatus.ERROR # 在连接尝试中，这也是一个错误
+            return COMMUNICATION_ERROR_SENTINEL
+
+        # --- 从这里开始，假设 write 和 read 本身没有抛出 SensorCommunicationError ---
+        # 到这里，response_data_parts 必须是一个列表
         if not response_data_parts: # 空列表，表示没有收到有效数据块
             if effective_verbose: print(f"[yellow]Query ({cmd.name}): 未收到有效数据块。")
             # 这不一定是通信中断，可能是设备没有响应特定命令，或者响应格式问题
@@ -1335,35 +1368,46 @@ class CloudSensor(object):
             if return_raw:
                 return full_response_decoded
 
-            if full_response_decoded:
-                # 必须以完整的握手结束才认为是有效响应
-                if not full_response_decoded.endswith(full_handshake_bytes.decode(errors='ignore')):
-                    if effective_verbose: print(f"[yellow]响应未以预期的握手结束: {full_response_decoded!r}")
-                    # 这可能表示不完整的响应或通信错误
-                    # 根据严格程度，这里可以抛出 SensorCommunicationError 或返回空
-                    # 为了更健壮，如果部分数据存在，我们尝试解析，但标记可能不完整
-                    # 但如果连握手都没有，很可能是严重错误
-                    self.last_error_message = "响应未以预期握手结束。"
-                    # 不立即改变状态，让 query 的调用者决定
-                    return [] # 返回空列表表示没有可解析的完整数据块
+            #如果 read_until() 返回空数据，或者返回的数据不以预期的握手信号结束，这应该被视为一个明确的通信问题（设备未响应或响应不正确）
+            if not full_response_decoded or not full_response_decoded.endswith(full_handshake_bytes.decode(errors='ignore')):
+                error_msg = "响应为空或未以预期握手结束。"
+                if full_response_decoded: # 如果有部分响应，包含在错误信息中
+                    error_msg += f" 响应: {full_response_decoded!r}"
+                else:
+                    error_msg += " (设备无响应或串口超时)"
+                
+                if effective_verbose: print(f"[yellow]{error_msg}")
+                
+                # 只有在之前状态是 CONNECTED 时才更新为 ERROR，避免在重连尝试中过早标记
+                if self._connection_status == ConnectionStatus.CONNECTED:
+                    self.last_error_message = error_msg
+                    self._connection_status = ConnectionStatus.ERROR 
+                elif self._connection_status == ConnectionStatus.ATTEMPTING_RECONNECT:
+                     # 在连接尝试期间，如果 read 失败，也应该认为是错误
+                    self.last_error_message = error_msg
+                    self._connection_status = ConnectionStatus.ERROR
 
-                data_to_parse = full_response_decoded
-                # 移除末尾的握手块 (包括 '!')
-                data_to_parse = data_to_parse[:-len(full_handshake_bytes)]
-                
-                idx = 0
-                while (idx + 15) <= len(data_to_parse):
-                    block = data_to_parse[idx:idx + 15]
-                    if not block.startswith('!'):
-                        if effective_verbose: print(f"[yellow]预期数据块以 '!' 开始，但得到: {block!r}")
-                        # 如果数据块格式错误，后续解析可能无意义
-                        break 
-                    all_data_blocks_content.append(block[1:])
-                    idx += 15
-                
-                if idx < len(data_to_parse) and effective_verbose:
-                     print(f"[yellow]解析数据块后仍有剩余字符: {data_to_parse[idx:]!r}")
+                return COMMUNICATION_ERROR_SENTINEL # 返回哨兵，指示通信失败
+
+            data_to_parse = full_response_decoded
+            # 移除末尾的握手块 (包括 '!')
+            data_to_parse = data_to_parse[:-len(full_handshake_bytes)]
             
+            idx = 0
+
+            while (idx + 15) <= len(data_to_parse):
+                block = data_to_parse[idx:idx + 15]
+
+                if not block.startswith('!'):
+                    if effective_verbose: print(f"[yellow]预期数据块以 '!' 开始，但得到: {block!r}")
+                    # 如果数据块格式错误，后续解析可能无意义
+                    break 
+                all_data_blocks_content.append(block[1:])
+                idx += 15
+            
+            if idx < len(data_to_parse) and effective_verbose:
+                    print(f"[yellow]解析数据块后仍有剩余字符: {data_to_parse[idx:]!r}")
+
             return all_data_blocks_content
 
         except serial.SerialException as e:

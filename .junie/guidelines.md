@@ -107,7 +107,7 @@ Audience: Advanced developers contributing to this repository. This document cap
 - Code style and linting
   - Use Ruff for linting/formatting. Black/Flake8 are not required here.
   - Config highlights (see pyproject):
-    - Line length: 88; `E203, W503` ignored.
+    - Line length: 100; `E203, W503` ignored.
     - Docstrings: Google convention.
 
 - Type hints

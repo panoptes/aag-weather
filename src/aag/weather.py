@@ -6,10 +6,11 @@ from contextlib import suppress
 from datetime import datetime
 
 import serial
-from aag.commands import WeatherCommand, WeatherResponseCodes
-from aag.settings import Thresholds, WeatherSettings, WhichUnits
 from astropy import units as u
 from rich import print
+
+from aag.commands import WeatherCommand, WeatherResponseCodes
+from aag.settings import Thresholds, WeatherSettings, WhichUnits
 
 
 class CloudSensor:

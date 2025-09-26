@@ -1,6 +1,7 @@
-from aag.weather import CloudSensor
 from fastapi import FastAPI
 from fastapi_utils.tasks import repeat_every
+
+from aag.weather import CloudSensor
 
 app = FastAPI()
 sensor: CloudSensor | None = None

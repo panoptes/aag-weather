@@ -2,9 +2,10 @@ import subprocess
 from pathlib import Path
 
 import typer
-from aag.weather import CloudSensor
 from astropy.table import Table
 from rich import print
+
+from aag.weather import CloudSensor
 
 app = typer.Typer()
 readings_table = Table()

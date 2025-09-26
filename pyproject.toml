@@ -50,6 +50,10 @@ testing = [
 [tool.hatch.version]
 source = "vcs"
 
+[tool.setuptools.packages.find]
+where = ["src/"]
+include = ["aag", "aag.*"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/aag"]
 

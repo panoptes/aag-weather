@@ -50,6 +50,10 @@ testing = [
 [tool.hatch.version]
 source = "vcs"
 
+[tool.setuptools.packages.find]
+where = ["src/"]
+include = ["aag", "aag.*"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/aag"]
 
@@ -116,7 +120,7 @@ exclude = [
 ]
 
 [tool.ruff.lint]
-extend-ignore = ["E203", "W503"]
+extend-ignore = ["E203"]
 
 [tool.ruff.lint.pydocstyle]
 convention = "google"

@@ -1,9 +1,128 @@
 [build-system]
-# AVOID CHANGING REQUIRES: IT WILL BE UPDATED BY PYSCAFFOLD!
-requires = ["setuptools>=46.1.0", "setuptools_scm[toml]>=5", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling>=1.25", "hatch-vcs>=0.4"]
+build-backend = "hatchling.build"
 
-[tool.setuptools_scm]
-# For smarter version schemes and other configuration options,
-# check out https://github.com/pypa/setuptools_scm
-version_scheme = "no-guess-dev"
+[project]
+name = "panoptes-aag"
+description = "Weather service for the Lunatico AAG CloudWatcher."
+readme = "README.md"
+requires-python = ">=3.12"
+license = { file = "LICENSE.txt" }
+dynamic = ["version"]
+authors = [
+  { name = "Wilfred Tyler Gee", email = "wtylergee@gmail.com" },
+]
+keywords = ["weather", "AAG", "CloudWatcher", "astronomy"]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Programming Language :: Python",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3 :: Only",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: POSIX :: Linux",
+]
+dependencies = [
+  "astropy",
+  "fastapi[all]",
+  "fastapi-utils",
+  "httpie",
+  "pandas",
+  "pydantic",
+  "pydantic-settings",
+  "pyserial>=3.4",
+  "python-dotenv",
+  "typer",
+]
+
+[project.urls]
+Homepage = "https://github.com/panoptes/aag-weather/"
+Documentation = "https://projectpanoptes.org/"
+
+[project.scripts]
+aag-weather = "aag.cli:app"
+
+[project.optional-dependencies]
+testing = [
+  "pytest",
+  "pytest-cov",
+]
+
+[tool.hatch.version]
+source = "vcs"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/aag"]
+
+[tool.hatch.envs.default]
+dependencies = [
+    "ruff>=0.5.0"
+]
+[tool.hatch.envs.default.scripts]
+lint = "ruff check ."
+lint-fix = "ruff check --fix ."
+fmt = "ruff format ."
+fmt-check = "ruff format --check ."
+
+[tool.hatch.envs.test]
+dependencies = ["pytest", "pytest-cov"]
+[tool.hatch.envs.test.scripts]
+# Run tests with: hatch run test
+# Or pass args: hatch run test -- -q
+TEST = "pytest"
+test = "pytest {args}"
+
+[tool.pytest.ini_options]
+addopts = [
+  "--cov=aag",
+  "--cov-report=term-missing",
+  "--cov-report=xml:build/coverage.xml",
+  "--strict-markers",
+  "--doctest-modules",
+  "-vv",
+  "-ra",
+]
+# keep test discovery consistent with previous setup
+norecursedirs = ["dist", "build", ".tox"]
+testpaths = ["tests"]
+doctest_optionflags = "ELLIPSIS NORMALIZE_WHITESPACE ALLOW_UNICODE IGNORE_EXCEPTION_DETAIL"
+filterwarnings = [
+  "ignore:elementwise == comparison failed:DeprecationWarning",
+  "ignore::pytest.PytestDeprecationWarning",
+]
+
+[tool.coverage.report]
+show_missing = true
+ignore_errors = true
+exclude_lines = [
+  "pragma: no cover",
+  "noqa",
+  "def __repr__",
+  "if self\\.debug",
+  "raise AssertionError",
+  "raise NotImplementedError",
+  "if 0:",
+  "if __name__ == .__main__.:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+exclude = [
+  ".tox",
+  "build",
+  "dist",
+  ".eggs",
+  "docs/conf.py",
+]
+
+[tool.ruff.lint]
+extend-ignore = ["E203", "W503"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+line-ending = "lf"
+docstring-code-format = true

@@ -1,12 +1,13 @@
-from pydantic_settings import BaseSettings
-from pydantic import BaseModel
 from enum import StrEnum
+
+from pydantic import BaseModel
+from pydantic_settings import BaseSettings
 
 
 class WhichUnits(StrEnum):
-    metric = 'metric'
-    imperial = 'imperial'
-    none = 'none'
+    metric = "metric"
+    imperial = "imperial"
+    none = "none"
 
 
 class Thresholds(BaseModel):
@@ -32,18 +33,20 @@ class Heater(BaseModel):
 
 
 class WeatherSettings(BaseSettings):
-    serial_port: str = '/dev/ttyUSB0'
+    serial_port: str = "/dev/ttyUSB0"
     safety_delay: float = 15  # minutes
     capture_delay: float = 30  # seconds
     num_readings: int = 10
-    ignore_unsafe: bool | None = None  # None, otherwise can be a list, e.g. 'rain','cloud','gust','wind'
+    ignore_unsafe: bool | None = (
+        None  # None, otherwise can be a list, e.g. 'rain','cloud','gust','wind'
+    )
     thresholds: Thresholds = Thresholds()
     heater: Heater = Heater()
 
     class Config:
-        env_prefix = 'AAG_'
-        env_file = 'config.env'
-        env_nested_delimiter = '__'
+        env_prefix = "AAG_"
+        env_file = "config.env"
+        env_nested_delimiter = "__"
 
 
 class WeatherPlotter(BaseModel):
@@ -55,8 +58,8 @@ class WeatherPlotter(BaseModel):
 
 
 class Location(BaseModel):
-    name: str = 'AAG CloudWatcher'
+    name: str = "AAG CloudWatcher"
     elevation: float = 100.0  # meters
     latitude: float = 19.54  # degrees
     longitude: float = -155.58  # degrees
-    timezone: str = 'US/Hawaii'
+    timezone: str = "US/Hawaii"

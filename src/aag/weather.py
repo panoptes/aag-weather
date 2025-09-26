@@ -1,22 +1,20 @@
 import re
 import time
+from collections import deque
+from collections.abc import Callable
+from contextlib import suppress
 from datetime import datetime
 
 import serial
-from collections.abc import Callable
-from collections import deque
-from contextlib import suppress
-
+from aag.commands import WeatherCommand, WeatherResponseCodes
+from aag.settings import Thresholds, WeatherSettings, WhichUnits
 from astropy import units as u
 from rich import print
 
-from aag.commands import WeatherCommand, WeatherResponseCodes
-from aag.settings import WeatherSettings, WhichUnits, Thresholds
 
-
-class CloudSensor(object):
+class CloudSensor:
     def __init__(self, connect: bool = True, **kwargs):
-        """ A class to read the cloud sensor.
+        """A class to read the cloud sensor.
 
         Args:
             connect: Whether to connect to the sensor on init.
@@ -25,25 +23,23 @@ class CloudSensor(object):
         self.config = WeatherSettings(**kwargs)
 
         try:
-            self._sensor: serial.Serial = serial.serial_for_url(self.config.serial_port,
-                                                                baudrate=9600,
-                                                                timeout=1,
-                                                                do_not_open=True
-                                                                )
+            self._sensor: serial.Serial = serial.serial_for_url(
+                self.config.serial_port, baudrate=9600, timeout=1, do_not_open=True
+            )
             if connect:
                 self._sensor.open()
                 self._sensor.reset_input_buffer()
                 self._sensor.reset_output_buffer()
         except serial.serialutil.SerialException as e:
-            print(f'[red]Unable to connect to weather sensor. Check the port. {e}')
+            print(f"[red]Unable to connect to weather sensor. Check the port. {e}")
             raise e
 
-        self.handshake_block = r'\x11\s{12}0'
+        self.handshake_block = r"\x11\s{12}0"
 
         # Set up a queue for readings
         self.readings = deque(maxlen=self.config.num_readings)
 
-        self.name: str = 'CloudWatcher'
+        self.name: str = "CloudWatcher"
         self.firmware: str | None = None
         self.serial_number: str | None = None
         self.has_anemometer: bool = False
@@ -55,7 +51,7 @@ class CloudSensor(object):
 
     @property
     def is_connected(self) -> bool:
-        """ Is the sensor connected?"""
+        """Is the sensor connected?"""
         return self._is_connected
 
     @property
@@ -71,10 +67,10 @@ class CloudSensor(object):
     @property
     def is_safe(self) -> bool:
         """Is the sensor safe?"""
-        return self.status['is_safe']
+        return self.status["is_safe"]
 
     def connect(self, raise_exceptions: bool = True) -> bool:
-        """ Connect to the sensor.
+        """Connect to the sensor.
 
         Args:
             raise_exceptions: Whether to raise exceptions, default True.
@@ -98,14 +94,14 @@ class CloudSensor(object):
 
             self._is_connected = True
         except Exception as e:
-            print(f'[red]Unable to connect to weather sensor. Check the port. {e}')
+            print(f"[red]Unable to connect to weather sensor. Check the port. {e}")
             if raise_exceptions:
                 raise e
             self._is_connected = False
 
         return self._is_connected
 
-    def capture(self, callback: Callable | None = None, units: WhichUnits = 'none') -> None:
+    def capture(self, callback: Callable | None = None, units: WhichUnits = "none") -> None:
         """Captures readings continuously.
 
         Args:
@@ -122,8 +118,10 @@ class CloudSensor(object):
         except KeyboardInterrupt:
             pass
 
-    def get_reading(self, units: WhichUnits = 'none', get_errors: bool = False, avg_times: int = 3) -> dict:
-        """ Get a single reading of all values.
+    def get_reading(
+        self, units: WhichUnits = "none", get_errors: bool = False, avg_times: int = 3
+    ) -> dict:
+        """Get a single reading of all values.
 
         Args:
             units: The astropy units to return the reading in, default 'none',
@@ -139,39 +137,43 @@ class CloudSensor(object):
             return round(sum(fn() for _ in range(n)) / n, 3)
 
         reading = {
-            'timestamp': datetime.now().isoformat(),
-            'ambient_temp': avg_times(self.get_ambient_temperature),
-            'sky_temp': avg_times(self.get_sky_temperature),
-            'wind_speed': avg_times(self.get_wind_speed),
-            'rain_frequency': avg_times(self.get_rain_frequency),
-            'pwm': self.get_pwm(),
+            "timestamp": datetime.now().isoformat(),
+            "ambient_temp": avg_times(self.get_ambient_temperature),
+            "sky_temp": avg_times(self.get_sky_temperature),
+            "wind_speed": avg_times(self.get_wind_speed),
+            "rain_frequency": avg_times(self.get_rain_frequency),
+            "pwm": self.get_pwm(),
         }
 
         if get_errors:
-            reading.update(**{f'error_{i:02d}': err for i, err in enumerate(self.get_errors())})
+            reading.update(**{f"error_{i:02d}": err for i, err in enumerate(self.get_errors())})
 
         # Add the safety values.
         reading = self.get_safe_reading(reading)
 
         # Add astropy units if requested.
-        if units != 'none':
+        if units != "none":
             # First make them metric units.
-            reading['ambient_temp'] *= u.Celsius
-            reading['sky_temp'] *= u.Celsius
-            reading['wind_speed'] *= u.m / u.s
-            reading['pwm'] *= u.percent
+            reading["ambient_temp"] *= u.Celsius
+            reading["sky_temp"] *= u.Celsius
+            reading["wind_speed"] *= u.m / u.s
+            reading["pwm"] *= u.percent
             # Then convert if needed.
-            if units == 'imperial':
-                reading['ambient_temp'] = reading['ambient_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                reading['sky_temp'] = reading['sky_temp'].to(u.imperial.deg_F, equivalencies=u.temperature())
-                reading['wind_speed'] = reading['wind_speed'].to(u.imperial.mile / u.hour)
+            if units == "imperial":
+                reading["ambient_temp"] = reading["ambient_temp"].to(
+                    u.imperial.deg_F, equivalencies=u.temperature()
+                )
+                reading["sky_temp"] = reading["sky_temp"].to(
+                    u.imperial.deg_F, equivalencies=u.temperature()
+                )
+                reading["wind_speed"] = reading["wind_speed"].to(u.imperial.mile / u.hour)
 
         self.readings.append(reading)
 
         return reading
 
     def get_safe_reading(self, reading: dict) -> dict:
-        """ Checks the reading against the thresholds.
+        """Checks the reading against the thresholds.
 
         Args:
             reading: The reading to check.
@@ -179,41 +181,45 @@ class CloudSensor(object):
         Returns:
             The reading with the safety values added.
         """
-        reading['cloud_condition'] = 'unknown'
-        temp_diff = reading['sky_temp'] - reading['ambient_temp']
+        reading["cloud_condition"] = "unknown"
+        temp_diff = reading["sky_temp"] - reading["ambient_temp"]
         if temp_diff >= self.thresholds.very_cloudy:
-            reading['cloud_condition'] = 'very cloudy'
+            reading["cloud_condition"] = "very cloudy"
         elif temp_diff >= self.thresholds.cloudy:
-            reading['cloud_condition'] = 'cloudy'
+            reading["cloud_condition"] = "cloudy"
         else:
-            reading['cloud_condition'] = 'clear'
+            reading["cloud_condition"] = "clear"
 
-        reading['wind_condition'] = 'unknown'
-        if reading['wind_speed'] is not None:
-            if reading['wind_speed'] >= self.thresholds.very_gusty:
-                reading['wind_condition'] = 'very gusty'
-            elif reading['wind_speed'] >= self.thresholds.gusty:
-                reading['wind_condition'] = 'gusty'
-            elif reading['wind_speed'] >= self.thresholds.very_windy:
-                reading['wind_condition'] = 'very windy'
-            elif reading['wind_speed'] >= self.thresholds.windy:
-                reading['wind_condition'] = 'windy'
+        reading["wind_condition"] = "unknown"
+        if reading["wind_speed"] is not None:
+            if reading["wind_speed"] >= self.thresholds.very_gusty:
+                reading["wind_condition"] = "very gusty"
+            elif reading["wind_speed"] >= self.thresholds.gusty:
+                reading["wind_condition"] = "gusty"
+            elif reading["wind_speed"] >= self.thresholds.very_windy:
+                reading["wind_condition"] = "very windy"
+            elif reading["wind_speed"] >= self.thresholds.windy:
+                reading["wind_condition"] = "windy"
             else:
-                reading['wind_condition'] = 'calm'
+                reading["wind_condition"] = "calm"
 
-        reading['rain_condition'] = 'unknown'
-        if reading['rain_frequency'] <= self.thresholds.rainy:
-            reading['rain_condition'] = 'rainy'
-        elif reading['rain_frequency'] <= self.thresholds.wet:
-            reading['rain_condition'] = 'wet'
+        reading["rain_condition"] = "unknown"
+        if reading["rain_frequency"] <= self.thresholds.rainy:
+            reading["rain_condition"] = "rainy"
+        elif reading["rain_frequency"] <= self.thresholds.wet:
+            reading["rain_condition"] = "wet"
         else:
-            reading['rain_condition'] = 'dry'
+            reading["rain_condition"] = "dry"
 
-        reading['cloud_safe'] = True if reading['cloud_condition'] == 'clear' else False
-        reading['wind_safe'] = True if reading['wind_condition'] == 'calm' else False
-        reading['rain_safe'] = True if reading['rain_condition'] == 'dry' else False
+        reading["cloud_safe"] = True if reading["cloud_condition"] == "clear" else False
+        reading["wind_safe"] = True if reading["wind_condition"] == "calm" else False
+        reading["rain_safe"] = True if reading["rain_condition"] == "dry" else False
 
-        reading['is_safe'] = True if reading['cloud_safe'] and reading['wind_safe'] and reading['rain_safe'] else False
+        reading["is_safe"] = (
+            True
+            if reading["cloud_safe"] and reading["wind_safe"] and reading["rain_safe"]
+            else False
+        )
 
         return reading
 
@@ -236,7 +242,7 @@ class CloudSensor(object):
         Returns:
             The sky temperature in Celsius.
         """
-        return self.query(WeatherCommand.GET_SKY_TEMP) / 100.
+        return self.query(WeatherCommand.GET_SKY_TEMP) / 100.0
 
     def get_ambient_temperature(self) -> float:
         """Gets the latest ambient temperature reading.
@@ -244,7 +250,7 @@ class CloudSensor(object):
         Returns:
             The ambient temperature in Celsius.
         """
-        return self.query(WeatherCommand.GET_SENSOR_TEMP) / 100.
+        return self.query(WeatherCommand.GET_SENSOR_TEMP) / 100.0
 
     def get_rain_sensor_values(self) -> list[float]:
         """Gets the latest sensor values.
@@ -256,11 +262,11 @@ class CloudSensor(object):
 
         for i, response in enumerate(responses.copy()):
             if response.startswith(WeatherResponseCodes.GET_VALUES_AMBIENT):
-                responses[i] = response[2:] / 100.
+                responses[i] = response[2:] / 100.0
             elif response.startswith(WeatherResponseCodes.GET_VALUES_LDR_VOLTAGE):
                 responses[i] = response[2:]
             elif response.startswith(WeatherResponseCodes.GET_VALUES_SENSOR_TEMP):
-                responses[i] = float(response[2:]) / 100.
+                responses[i] = float(response[2:]) / 100.0
             elif response.startswith(WeatherResponseCodes.GET_VALUES_ZENER_VOLTAGE):
                 responses[i] = response[2:]
 
@@ -290,10 +296,10 @@ class CloudSensor(object):
         """
         percent = min(100, max(0, int(percent)))
         percent = int(percent * 1023 / 100)
-        return self.query(WeatherCommand.SET_PWM, cmd_params=f'{percent:04d}')
+        return self.query(WeatherCommand.SET_PWM, cmd_params=f"{percent:04d}")
 
     def get_wind_speed(self) -> float | None:
-        """ Gets the wind speed.
+        """Gets the wind speed.
 
         Returns:
             The wind speed in km/h.
@@ -307,10 +313,15 @@ class CloudSensor(object):
         else:
             return None
 
-    def query(self, cmd: WeatherCommand,
-              return_codes: bool = False,
-              parse_type: type = float, *args, **kwargs) -> list | str | float | int | bool:
-        """ Queries the sensor for the current values.
+    def query(
+        self,
+        cmd: WeatherCommand,
+        return_codes: bool = False,
+        parse_type: type = float,
+        *args,
+        **kwargs,
+    ) -> list | str | float | int | bool:
+        """Queries the sensor for the current values.
 
          This combines the `write` and `read` methods into a single method and
          checks that the response is valid.
@@ -324,7 +335,7 @@ class CloudSensor(object):
 
         Returns:
             The response from the sensor.
-         """
+        """
         self.write(cmd, *args, **kwargs)
         response = self.read(*args, **kwargs)
 
@@ -332,13 +343,15 @@ class CloudSensor(object):
             response = response[0]
 
         if return_codes is False:
-            response = re.sub(WeatherResponseCodes[cmd.name], '', response)
+            response = re.sub(WeatherResponseCodes[cmd.name], "", response)
             with suppress(ValueError):
                 response = parse_type(response)
 
         return response
 
-    def write(self, cmd: WeatherCommand, cmd_params: str = '', cmd_delim: str = '!', *args, **kwargs) -> int:
+    def write(
+        self, cmd: WeatherCommand, cmd_params: str = "", cmd_delim: str = "!", *args, **kwargs
+    ) -> int:
         """Writes a command to the sensor.
 
         Appends the command delimiter and carriage return to the command and
@@ -352,7 +365,7 @@ class CloudSensor(object):
         Returns:
             The number of bytes written.
         """
-        full_cmd = f'{cmd.value}{cmd_params}{cmd_delim}'
+        full_cmd = f"{cmd.value}{cmd_params}{cmd_delim}"
         return self._sensor.write(full_cmd.encode())
 
     def read(self, return_raw: bool = False, verbose: bool = False, *args, **kwargs) -> list:
@@ -378,7 +391,7 @@ class CloudSensor(object):
         """
         response = self._sensor.read_until(self.handshake_block).decode()
         if verbose:
-            print(f'Raw response: {response!r}')
+            print(f"Raw response: {response!r}")
 
         if not return_raw:
             # Split into a list of blocks, with each item containing both the
@@ -388,13 +401,13 @@ class CloudSensor(object):
             # Check that the handshake block is valid.
             handshake_block = response.pop()
             if re.match(self.handshake_block, handshake_block) is None:
-                raise ValueError(f'Invalid handshake block {handshake_block!r}')
+                raise ValueError(f"Invalid handshake block {handshake_block!r}")
 
         return response
 
     def __str__(self):
-        return f'CloudSensor({self.name}, FW={self.firmware}, SN={self.serial_number}, port={self.config.serial_port})'
+        return f"CloudSensor({self.name}, FW={self.firmware}, SN={self.serial_number}, port={self.config.serial_port})"
 
     def __del__(self):
-        print('[red]Closing serial connection')
+        print("[red]Closing serial connection")
         self._sensor.close()

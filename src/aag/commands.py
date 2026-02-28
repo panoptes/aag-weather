@@ -1,5 +1,7 @@
 from enum import StrEnum
 
+__all__ = ["WeatherCommand", "WeatherResponseCodes"]
+
 
 class WeatherCommand(StrEnum):
     """Command List (from Rs232_Comms_v100.pdf)"""

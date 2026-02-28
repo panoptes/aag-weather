@@ -1,7 +1,10 @@
 from enum import StrEnum
+from typing import TypedDict
 
-from pydantic import BaseModel
-from pydantic_settings import BaseSettings
+from pydantic import BaseModel, Field
+from pydantic_settings import BaseSettings, SettingsConfigDict
+
+__all__ = ["WeatherSettings", "WeatherReading", "Thresholds", "Heater", "WhichUnits"]
 
 
 class WhichUnits(StrEnum):
@@ -33,20 +36,40 @@ class Heater(BaseModel):
 
 
 class WeatherSettings(BaseSettings):
+    model_config = SettingsConfigDict(
+        env_prefix="AAG_",
+        env_file="config.env",
+        env_nested_delimiter="__",
+    )
+
     serial_port: str = "/dev/ttyUSB0"
-    safety_delay: float = 15  # minutes
-    capture_delay: float = 30  # seconds
+    safety_delay: float = Field(default=15, description="Safety delay in minutes")
+    capture_delay: float = Field(default=30, description="Delay between readings in seconds")
     num_readings: int = 10
-    ignore_unsafe: bool | None = (
-        None  # None, otherwise can be a list, e.g. 'rain','cloud','gust','wind'
+    ignore_unsafe: list[str] | None = Field(
+        default=None,
+        description="Conditions to ignore when computing is_safe, e.g. ['rain', 'cloud', 'wind']",
     )
     thresholds: Thresholds = Thresholds()
     heater: Heater = Heater()
 
-    class Config:
-        env_prefix = "AAG_"
-        env_file = "config.env"
-        env_nested_delimiter = "__"
+
+class WeatherReading(TypedDict, total=False):
+    """Shape of a single weather reading dict."""
+
+    timestamp: str
+    ambient_temp: float
+    sky_temp: float
+    wind_speed: float | None
+    rain_frequency: int
+    pwm: float
+    cloud_condition: str
+    wind_condition: str
+    rain_condition: str
+    cloud_safe: bool
+    wind_safe: bool
+    rain_safe: bool
+    is_safe: bool
 
 
 class WeatherPlotter(BaseModel):

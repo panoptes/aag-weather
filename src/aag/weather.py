@@ -33,7 +33,7 @@ class CloudSensor:
                 self._sensor.reset_output_buffer()
         except serial.serialutil.SerialException as e:
             print(f"[red]Unable to connect to weather sensor. Check the port. {e}")
-            raise e
+            raise
 
         self.handshake_block = r"\x11\s{12}0"
 
@@ -97,7 +97,7 @@ class CloudSensor:
         except Exception as e:
             print(f"[red]Unable to connect to weather sensor. Check the port. {e}")
             if raise_exceptions:
-                raise e
+                raise
             self._is_connected = False
 
         return self._is_connected
@@ -120,7 +120,7 @@ class CloudSensor:
             pass
 
     def get_reading(
-        self, units: WhichUnits = "none", get_errors: bool = False, avg_times: int = 3
+        self, units: WhichUnits = "none", get_errors: bool = False, num_averages: int = 3
     ) -> dict:
         """Get a single reading of all values.
 
@@ -128,21 +128,21 @@ class CloudSensor:
             units: The astropy units to return the reading in, default 'none',
                 can be 'metric' or 'imperial'.
             get_errors: Whether to get the internal errors, default False.
-            avg_times: The number of times to average the readings, default 3.
+            num_averages: The number of times to average the readings, default 3.
 
         Returns:
             A dictionary of readings.
         """
 
-        def avg_times(fn, n=avg_times):
+        def _average(fn, n=num_averages):
             return round(sum(fn() for _ in range(n)) / n, 3)
 
         reading = {
             "timestamp": datetime.now().isoformat(),
-            "ambient_temp": avg_times(self.get_ambient_temperature),
-            "sky_temp": avg_times(self.get_sky_temperature),
-            "wind_speed": avg_times(self.get_wind_speed),
-            "rain_frequency": avg_times(self.get_rain_frequency),
+            "ambient_temp": _average(self.get_ambient_temperature),
+            "sky_temp": _average(self.get_sky_temperature),
+            "wind_speed": _average(self.get_wind_speed),
+            "rain_frequency": _average(self.get_rain_frequency),
             "pwm": self.get_pwm(),
         }
 
@@ -406,9 +406,16 @@ class CloudSensor:
 
         return response
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        if hasattr(self, "_sensor"):
+            self._sensor.close()
+
     def __str__(self):
         return f"CloudSensor({self.name}, FW={self.firmware}, SN={self.serial_number}, port={self.config.serial_port})"
 
     def __del__(self):
-        print("[red]Closing serial connection")
-        self._sensor.close()
+        if hasattr(self, "_sensor"):
+            self._sensor.close()

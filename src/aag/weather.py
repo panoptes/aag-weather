@@ -1,3 +1,4 @@
+import logging
 import re
 import time
 from collections import deque
@@ -7,10 +8,13 @@ from datetime import datetime
 
 import serial
 from astropy import units as u
-from rich import print
 
 from aag.commands import WeatherCommand, WeatherResponseCodes
-from aag.settings import Thresholds, WeatherSettings, WhichUnits
+from aag.settings import Thresholds, WeatherReading, WeatherSettings, WhichUnits
+
+logger = logging.getLogger(__name__)
+
+__all__ = ["CloudSensor"]
 
 
 class CloudSensor:
@@ -32,7 +36,7 @@ class CloudSensor:
                 self._sensor.reset_input_buffer()
                 self._sensor.reset_output_buffer()
         except serial.serialutil.SerialException as e:
-            print(f"[red]Unable to connect to weather sensor. Check the port. {e}")
+            logger.error("Unable to connect to weather sensor. Check the port. %s", e)
             raise
 
         self.handshake_block = r"\x11\s{12}0"
@@ -95,7 +99,7 @@ class CloudSensor:
 
             self._is_connected = True
         except Exception as e:
-            print(f"[red]Unable to connect to weather sensor. Check the port. {e}")
+            logger.error("Unable to connect to weather sensor. Check the port. %s", e)
             if raise_exceptions:
                 raise
             self._is_connected = False
@@ -121,7 +125,7 @@ class CloudSensor:
 
     def get_reading(
         self, units: WhichUnits = "none", get_errors: bool = False, num_averages: int = 3
-    ) -> dict:
+    ) -> WeatherReading:
         """Get a single reading of all values.
 
         Args:
@@ -173,7 +177,7 @@ class CloudSensor:
 
         return reading
 
-    def get_safe_reading(self, reading: dict) -> dict:
+    def get_safe_reading(self, reading: WeatherReading) -> WeatherReading:
         """Checks the reading against the thresholds.
 
         Args:
@@ -392,7 +396,7 @@ class CloudSensor:
         """
         response = self._sensor.read_until(self.handshake_block).decode()
         if verbose:
-            print(f"Raw response: {response!r}")
+            logger.debug("Raw response: %r", response)
 
         if not return_raw:
             # Split into a list of blocks, with each item containing both the

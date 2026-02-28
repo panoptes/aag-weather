@@ -1,7 +1,10 @@
 from enum import StrEnum
+from typing import TypedDict
 
 from pydantic import BaseModel, Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+__all__ = ["WeatherSettings", "WeatherReading", "Thresholds", "Heater", "WhichUnits"]
 
 
 class WhichUnits(StrEnum):
@@ -49,6 +52,24 @@ class WeatherSettings(BaseSettings):
     )
     thresholds: Thresholds = Thresholds()
     heater: Heater = Heater()
+
+
+class WeatherReading(TypedDict, total=False):
+    """Shape of a single weather reading dict."""
+
+    timestamp: str
+    ambient_temp: float
+    sky_temp: float
+    wind_speed: float | None
+    rain_frequency: int
+    pwm: float
+    cloud_condition: str
+    wind_condition: str
+    rain_condition: str
+    cloud_safe: bool
+    wind_safe: bool
+    rain_safe: bool
+    is_safe: bool
 
 
 class WeatherPlotter(BaseModel):

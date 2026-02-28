@@ -1,14 +1,13 @@
-import subprocess
 from pathlib import Path
 
 import typer
+import uvicorn
 from astropy.table import Table
 from rich import print
 
 from aag.weather import CloudSensor
 
 app = typer.Typer()
-readings_table = Table()
 
 format_lookup = {
     ".csv": "ascii.csv",
@@ -19,7 +18,7 @@ format_lookup = {
 
 @app.command(name="capture")
 def capture(
-    output: Path = typer.Option(
+    output: Path | None = typer.Option(
         "weather.ecsv",
         help="Output filename with format determined by extension, "
         "defaults to an astropy ECSV file.",
@@ -30,10 +29,12 @@ def capture(
     sensor = CloudSensor()
     print(f"Sensor: {sensor}")
 
-    def callback(reading):
-        global readings_table
+    readings_table: Table | None = None
 
-        if len(readings_table) == 0:
+    def callback(reading):
+        nonlocal readings_table
+
+        if readings_table is None:
             readings_table = Table([reading])
         else:
             readings_table.add_row(reading)
@@ -41,8 +42,7 @@ def capture(
         if verbose:
             print(reading)
 
-        if output is not None:
-            readings_table.write(output, overwrite=True, format=format_lookup.get(output.suffix))
+        readings_table.write(output, overwrite=True, format=format_lookup.get(output.suffix))
 
     try:
         # Blocking.
@@ -50,8 +50,7 @@ def capture(
     except KeyboardInterrupt:
         print("Stopping capture.")
     finally:
-        if output is not None:
-            print(f"\nData saved to [green]{output}[/green]")
+        print(f"\nData saved to [green]{output}[/green]")
 
 
 @app.command(name="serve")
@@ -60,7 +59,7 @@ def serve(
     host: str = typer.Option("localhost", help="Host to serve on."),
 ):
     """Start the FastAPI server."""
-    subprocess.run(["uvicorn", "aag.server:app", f"--host={host}", f"--port={port}"], check=False)
+    uvicorn.run("aag.server:app", host=host, port=port)
 
 
 if __name__ == "__main__":
